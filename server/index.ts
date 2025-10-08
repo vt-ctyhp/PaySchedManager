@@ -3,6 +3,7 @@ import session from "express-session";
 import MemoryStore from "memorystore";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import { storage } from "./storage";
 
 const app = express();
 app.use(express.json());
@@ -58,6 +59,9 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Initialize storage with default data
+  await storage.initialize();
+  
   const server = await registerRoutes(app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {

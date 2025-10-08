@@ -88,12 +88,28 @@ export class MemStorage implements IStorage {
     this.expenseTypes = new Map();
     this.paymentSchedules = new Map();
     this.paymentRecords = new Map();
-
-    // Initialize with default data
-    this.initializeDefaults();
   }
 
-  private initializeDefaults() {
+  async initialize() {
+    await this.initializeDefaults();
+  }
+
+  private async initializeDefaults() {
+    // Import hashPassword for default admin user
+    const bcrypt = await import("bcrypt");
+    const SALT_ROUNDS = 10;
+    
+    // Default Admin User (password: admin123)
+    const adminId = randomUUID();
+    const hashedPassword = await bcrypt.hash("admin123", SALT_ROUNDS);
+    this.users.set(adminId, {
+      id: adminId,
+      username: "admin",
+      password: hashedPassword,
+      role: "Admin",
+      createdAt: new Date(),
+    });
+
     // Default Internal Companies
     const companies = [
       { name: "Trans Fine Jewelry", abbreviation: "TFJ" },
