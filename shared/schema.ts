@@ -75,11 +75,15 @@ export const paymentSchedules = pgTable("payment_schedules", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
-export const insertPaymentScheduleSchema = createInsertSchema(paymentSchedules).omit({
-  id: true,
-  expenseId: true,
-  createdAt: true,
-});
+export const insertPaymentScheduleSchema = createInsertSchema(paymentSchedules)
+  .omit({
+    id: true,
+    expenseId: true,
+    createdAt: true,
+  })
+  .extend({
+    nextDueDate: z.coerce.date(),
+  });
 
 export type InsertPaymentSchedule = z.infer<typeof insertPaymentScheduleSchema>;
 export type PaymentSchedule = typeof paymentSchedules.$inferSelect;
@@ -98,10 +102,14 @@ export const paymentRecords = pgTable("payment_records", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
-export const insertPaymentRecordSchema = createInsertSchema(paymentRecords).omit({
-  id: true,
-  createdAt: true,
-});
+export const insertPaymentRecordSchema = createInsertSchema(paymentRecords)
+  .omit({
+    id: true,
+    createdAt: true,
+  })
+  .extend({
+    paymentDate: z.coerce.date(),
+  });
 
 export type InsertPaymentRecord = z.infer<typeof insertPaymentRecordSchema>;
 export type PaymentRecord = typeof paymentRecords.$inferSelect;
