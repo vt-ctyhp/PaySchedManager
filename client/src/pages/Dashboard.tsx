@@ -4,6 +4,7 @@ import { DollarSign, Calendar, Clock, AlertCircle, Settings as SettingsIcon } fr
 import QuickStatsCard from "@/components/QuickStatsCard";
 import PaymentScheduleCard from "@/components/PaymentScheduleCard";
 import AddPaymentDialog from "@/components/AddPaymentDialog";
+import EditPaymentDialog from "@/components/EditPaymentDialog";
 import RecordPaymentDialog from "@/components/RecordPaymentDialog";
 import PaymentHistoryTable from "@/components/PaymentHistoryTable";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -27,6 +28,8 @@ export default function Dashboard() {
   const { user } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("all");
+  const [editingSchedule, setEditingSchedule] = useState<PaymentSchedule | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
   const canDelete = user?.role === "Admin";
 
   const { data: schedules = [] } = useQuery<PaymentSchedule[]>({
@@ -234,7 +237,13 @@ export default function Dashboard() {
                       dueDate={new Date(schedule.nextDueDate)}
                       frequency={schedule.frequency as any}
                       status={schedule.status}
-                      onEdit={(id) => console.log("Edit", id)}
+                      onEdit={(id) => {
+                        const scheduleToEdit = schedules.find(s => s.id === id);
+                        if (scheduleToEdit) {
+                          setEditingSchedule(scheduleToEdit);
+                          setEditDialogOpen(true);
+                        }
+                      }}
                       onDelete={(id) => console.log("Delete", id)}
                       onRecordPayment={(id) => {
                         const s = schedules.find(sch => sch.id === id);
@@ -258,6 +267,13 @@ export default function Dashboard() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Edit Payment Dialog */}
+      <EditPaymentDialog
+        schedule={editingSchedule}
+        open={editDialogOpen}
+        onOpenChange={setEditDialogOpen}
+      />
     </div>
   );
 }
