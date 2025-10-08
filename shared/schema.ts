@@ -95,9 +95,10 @@ export const paymentRecords = pgTable("payment_records", {
   expenseId: text("expense_id").notNull(),
   paymentDate: timestamp("payment_date").notNull(),
   amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
-  payer: text("payer").notNull(),
+  paidBy: varchar("paid_by").notNull(), // User ID who made the payment (auto-filled from session)
+  approvedBy: varchar("approved_by"), // User ID who approved the payment
   paymentMethod: text("payment_method").notNull(),
-  paymentAccount: text("payment_account"),
+  paymentAccountId: varchar("payment_account_id"), // Foreign key to payment accounts
   confirmationFile: text("confirmation_file"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
@@ -105,6 +106,7 @@ export const paymentRecords = pgTable("payment_records", {
 export const insertPaymentRecordSchema = createInsertSchema(paymentRecords)
   .omit({
     id: true,
+    paidBy: true, // Will be auto-filled from logged-in user
     createdAt: true,
   })
   .extend({
@@ -114,16 +116,18 @@ export const insertPaymentRecordSchema = createInsertSchema(paymentRecords)
 export type InsertPaymentRecord = z.infer<typeof insertPaymentRecordSchema>;
 export type PaymentRecord = typeof paymentRecords.$inferSelect;
 
-// Users (keeping from original template)
+// Users
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   username: text("username").notNull().unique(),
   password: text("password").notNull(),
+  role: text("role").notNull().default("User"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
-export const insertUserSchema = createInsertSchema(users).pick({
-  username: true,
-  password: true,
+export const insertUserSchema = createInsertSchema(users).omit({
+  id: true,
+  createdAt: true,
 });
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
