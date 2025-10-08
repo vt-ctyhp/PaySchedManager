@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { DollarSign, Calendar, Clock, AlertCircle, Settings as SettingsIcon } from "lucide-react";
 import QuickStatsCard from "@/components/QuickStatsCard";
 import PaymentScheduleCard from "@/components/PaymentScheduleCard";
@@ -13,6 +13,18 @@ import { Button } from "@/components/ui/button";
 import { Search } from "lucide-react";
 import { Link } from "wouter";
 import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import type { 
   PaymentSchedule, 
   PaymentRecord, 
@@ -26,10 +38,12 @@ import { differenceInDays, format } from "date-fns";
 
 export default function Dashboard() {
   const { user } = useAuth();
+  const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("all");
   const [editingSchedule, setEditingSchedule] = useState<PaymentSchedule | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [deletingScheduleId, setDeletingScheduleId] = useState<string | null>(null);
   const canDelete = user?.role === "Admin";
 
   const { data: schedules = [] } = useQuery<PaymentSchedule[]>({
@@ -58,6 +72,25 @@ export default function Dashboard() {
 
   const { data: users = [] } = useQuery<{ id: string; username: string }[]>({
     queryKey: ["/api/users/approvers"],
+  });
+
+  // Delete mutation
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => apiRequest("DELETE", `/api/payment-schedules/${id}`, {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/payment-schedules"] });
+      toast({ title: "Payment schedule deleted successfully" });
+    },
+    onError: () => {
+      toast({
+        title: "Failed to delete payment schedule",
+        description: "Please try again",
+        variant: "destructive"
+      });
+    },
+    onSettled: () => {
+      setDeletingScheduleId(null);
+    },
   });
 
   // Helper functions
@@ -244,7 +277,7 @@ export default function Dashboard() {
                           setEditDialogOpen(true);
                         }
                       }}
-                      onDelete={(id) => console.log("Delete", id)}
+                      onDelete={(id) => setDeletingScheduleId(id)}
                       onRecordPayment={(id) => {
                         const s = schedules.find(sch => sch.id === id);
                         console.log("Record payment for", s?.expenseId);
@@ -274,6 +307,42 @@ export default function Dashboard() {
         open={editDialogOpen}
         onOpenChange={setEditDialogOpen}
       />
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog 
+        open={!!deletingScheduleId} 
+        onOpenChange={(open) => !open && !deleteMutation.isPending && setDeletingScheduleId(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Payment Schedule</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this payment schedule? This action cannot be undone.
+              {deletingScheduleId && (
+                <>
+                  <br /><br />
+                  <strong>
+                    {schedules.find(s => s.id === deletingScheduleId)?.expenseId}
+                  </strong>
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteMutation.isPending} data-testid="button-delete-cancel">
+              Cancel
+            </AlertDialogCancel>
+            <Button
+              onClick={() => deletingScheduleId && deleteMutation.mutate(deletingScheduleId)}
+              disabled={deleteMutation.isPending}
+              data-testid="button-delete-confirm"
+              variant="destructive"
+            >
+              {deleteMutation.isPending ? "Deleting..." : "Delete"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
