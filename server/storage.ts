@@ -13,6 +13,8 @@ import {
   type InsertPaymentSchedule,
   type PaymentRecord,
   type InsertPaymentRecord,
+  type AccountMapping,
+  type InsertAccountMapping,
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 
@@ -69,6 +71,14 @@ export interface IStorage {
   createPaymentRecord(record: InsertPaymentRecord): Promise<PaymentRecord>;
   updatePaymentRecord(id: string, record: Partial<InsertPaymentRecord>): Promise<PaymentRecord | undefined>;
   deletePaymentRecord(id: string): Promise<boolean>;
+
+  // Account Mappings
+  getAllAccountMappings(): Promise<AccountMapping[]>;
+  getAccountMapping(id: string): Promise<AccountMapping | undefined>;
+  getAccountMappingByCsvName(csvAccountName: string): Promise<AccountMapping | undefined>;
+  createAccountMapping(mapping: InsertAccountMapping): Promise<AccountMapping>;
+  updateAccountMapping(id: string, mapping: Partial<InsertAccountMapping>): Promise<AccountMapping | undefined>;
+  deleteAccountMapping(id: string): Promise<boolean>;
 }
 
 export class MemStorage implements IStorage {
@@ -79,6 +89,7 @@ export class MemStorage implements IStorage {
   private expenseTypes: Map<string, ExpenseType>;
   private paymentSchedules: Map<string, PaymentSchedule>;
   private paymentRecords: Map<string, PaymentRecord>;
+  private accountMappings: Map<string, AccountMapping>;
 
   constructor() {
     this.users = new Map();
@@ -88,6 +99,7 @@ export class MemStorage implements IStorage {
     this.expenseTypes = new Map();
     this.paymentSchedules = new Map();
     this.paymentRecords = new Map();
+    this.accountMappings = new Map();
   }
 
   async initialize() {
@@ -396,6 +408,44 @@ export class MemStorage implements IStorage {
 
   async deletePaymentRecord(id: string): Promise<boolean> {
     return this.paymentRecords.delete(id);
+  }
+
+  // Account Mappings
+  async getAllAccountMappings(): Promise<AccountMapping[]> {
+    return Array.from(this.accountMappings.values());
+  }
+
+  async getAccountMapping(id: string): Promise<AccountMapping | undefined> {
+    return this.accountMappings.get(id);
+  }
+
+  async getAccountMappingByCsvName(csvAccountName: string): Promise<AccountMapping | undefined> {
+    return Array.from(this.accountMappings.values()).find(
+      (mapping) => mapping.csvAccountName === csvAccountName
+    );
+  }
+
+  async createAccountMapping(insertMapping: InsertAccountMapping): Promise<AccountMapping> {
+    const id = randomUUID();
+    const mapping: AccountMapping = {
+      id,
+      ...insertMapping,
+      createdAt: new Date(),
+    };
+    this.accountMappings.set(id, mapping);
+    return mapping;
+  }
+
+  async updateAccountMapping(id: string, mapping: Partial<InsertAccountMapping>): Promise<AccountMapping | undefined> {
+    const existing = this.accountMappings.get(id);
+    if (!existing) return undefined;
+    const updated = { ...existing, ...mapping };
+    this.accountMappings.set(id, updated);
+    return updated;
+  }
+
+  async deleteAccountMapping(id: string): Promise<boolean> {
+    return this.accountMappings.delete(id);
   }
 }
 

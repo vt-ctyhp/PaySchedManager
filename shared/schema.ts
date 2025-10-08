@@ -132,3 +132,19 @@ export const insertUserSchema = createInsertSchema(users).omit({
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
+
+// Account Mappings (for CSV import)
+export const accountMappings = pgTable("account_mappings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  csvAccountName: text("csv_account_name").notNull().unique(),
+  paymentAccountId: varchar("payment_account_id").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertAccountMappingSchema = createInsertSchema(accountMappings).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertAccountMapping = z.infer<typeof insertAccountMappingSchema>;
+export type AccountMapping = typeof accountMappings.$inferSelect;

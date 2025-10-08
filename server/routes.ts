@@ -10,6 +10,7 @@ import {
   insertPaymentScheduleSchema,
   insertPaymentRecordSchema,
   insertUserSchema,
+  insertAccountMappingSchema,
 } from "@shared/schema";
 import { hashPassword, authenticateUser, requireAuth, requireAdmin, getCurrentUser } from "./auth";
 import { upload } from "./upload";
@@ -534,6 +535,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error) {
       res.status(500).json({ message: "Failed to download file" });
+    }
+  });
+
+  // Account Mappings
+  app.get("/api/account-mappings", requireAuth, async (req, res) => {
+    try {
+      const mappings = await storage.getAllAccountMappings();
+      res.json(mappings);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch account mappings" });
+    }
+  });
+
+  app.post("/api/account-mappings", requireAuth, async (req, res) => {
+    try {
+      const data = insertAccountMappingSchema.parse(req.body);
+      const mapping = await storage.createAccountMapping(data);
+      res.status(201).json(mapping);
+    } catch (error) {
+      res.status(400).json({ message: "Invalid data" });
+    }
+  });
+
+  app.put("/api/account-mappings/:id", requireAuth, async (req, res) => {
+    try {
+      const data = insertAccountMappingSchema.partial().parse(req.body);
+      const mapping = await storage.updateAccountMapping(req.params.id, data);
+      if (!mapping) {
+        return res.status(404).json({ message: "Mapping not found" });
+      }
+      res.json(mapping);
+    } catch (error) {
+      res.status(400).json({ message: "Invalid data" });
+    }
+  });
+
+  app.delete("/api/account-mappings/:id", requireAuth, async (req, res) => {
+    try {
+      const success = await storage.deleteAccountMapping(req.params.id);
+      if (!success) {
+        return res.status(404).json({ message: "Mapping not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete mapping" });
     }
   });
 
