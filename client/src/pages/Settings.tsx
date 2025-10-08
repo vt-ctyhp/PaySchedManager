@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Plus, Trash2, Pencil } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 import {
   Dialog,
   DialogContent,
@@ -16,6 +17,13 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Table,
   TableBody,
   TableCell,
@@ -23,9 +31,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { InternalCompany, PaymentAccount, PaymentType, ExpenseType } from "@shared/schema";
+import { Badge } from "@/components/ui/badge";
+import type { InternalCompany, PaymentAccount, PaymentType, ExpenseType, User } from "@shared/schema";
 
 export default function Settings() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "Admin";
+
   return (
     <div className="min-h-screen bg-background p-6">
       <div className="max-w-6xl mx-auto space-y-6">
@@ -42,6 +54,7 @@ export default function Settings() {
             <TabsTrigger value="accounts" data-testid="tab-accounts">Payment Accounts</TabsTrigger>
             <TabsTrigger value="payment-types" data-testid="tab-payment-types">Payment Types</TabsTrigger>
             <TabsTrigger value="expense-types" data-testid="tab-expense-types">Expense Types</TabsTrigger>
+            {isAdmin && <TabsTrigger value="users" data-testid="tab-users">Users</TabsTrigger>}
           </TabsList>
 
           <TabsContent value="companies">
@@ -59,6 +72,12 @@ export default function Settings() {
           <TabsContent value="expense-types">
             <ExpenseTypesManager />
           </TabsContent>
+
+          {isAdmin && (
+            <TabsContent value="users">
+              <UsersManager />
+            </TabsContent>
+          )}
         </Tabs>
       </div>
     </div>
@@ -535,6 +554,165 @@ function ExpenseTypesManager() {
                       variant="ghost"
                       onClick={() => deleteMutation.mutate(type.id)}
                       data-testid={`button-delete-expense-type-${type.id}`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function UsersManager() {
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [role, setRole] = useState<"Admin" | "User">("User");
+
+  const { data: users = [], isLoading } = useQuery<User[]>({
+    queryKey: ["/api/users"],
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (data: { username: string; password: string; role: "Admin" | "User" }) =>
+      apiRequest("POST", "/api/users", data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      toast({ title: "User created successfully" });
+      setOpen(false);
+      setUsername("");
+      setPassword("");
+      setRole("User");
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to create user",
+        description: error.message || "Please try again",
+        variant: "destructive"
+      });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => apiRequest("DELETE", `/api/users/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      toast({ title: "User deleted successfully" });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to delete user",
+        description: error.message || "Please try again",
+        variant: "destructive"
+      });
+    },
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    createMutation.mutate({ username, password, role });
+  };
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
+        <CardTitle>Users</CardTitle>
+        <Dialog open={open} onOpenChange={setOpen}>
+          <DialogTrigger asChild>
+            <Button data-testid="button-add-user">
+              <Plus className="h-4 w-4 mr-2" />
+              Add User
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Create New User</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="username">Username</Label>
+                <Input
+                  id="username"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="Enter username"
+                  data-testid="input-username"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="password">Password</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Enter password"
+                  data-testid="input-password"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="role">Role</Label>
+                <Select value={role} onValueChange={(value) => setRole(value as "Admin" | "User")}>
+                  <SelectTrigger id="role" data-testid="select-role">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="User">User</SelectItem>
+                    <SelectItem value="Admin">Admin</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex gap-2">
+                <Button type="button" variant="outline" onClick={() => setOpen(false)} className="flex-1">
+                  Cancel
+                </Button>
+                <Button type="submit" className="flex-1" data-testid="button-save-user" disabled={createMutation.isPending}>
+                  {createMutation.isPending ? "Creating..." : "Create User"}
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <p className="text-sm text-muted-foreground">Loading...</p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Username</TableHead>
+                <TableHead>Role</TableHead>
+                <TableHead>Created At</TableHead>
+                <TableHead className="w-20"></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {users.map((user) => (
+                <TableRow key={user.id}>
+                  <TableCell data-testid={`text-username-${user.id}`}>{user.username}</TableCell>
+                  <TableCell>
+                    <Badge variant={user.role === "Admin" ? "default" : "secondary"} data-testid={`badge-role-${user.id}`}>
+                      {user.role}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : "—"}
+                  </TableCell>
+                  <TableCell>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => deleteMutation.mutate(user.id)}
+                      data-testid={`button-delete-user-${user.id}`}
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
