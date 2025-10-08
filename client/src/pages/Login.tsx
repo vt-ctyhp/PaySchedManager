@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -9,12 +9,19 @@ import { useToast } from "@/hooks/use-toast";
 
 export default function Login() {
   const [, setLocation] = useLocation();
-  const { login, register } = useAuth();
+  const { user, login, register } = useAuth();
   const { toast } = useToast();
   const [isRegistering, setIsRegistering] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (user) {
+      setLocation("/");
+    }
+  }, [user, setLocation]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,14 +41,13 @@ export default function Login() {
           description: "You have successfully logged in",
         });
       }
-      setLocation("/");
+      // Redirect handled by useEffect when user state updates
     } catch (error: any) {
       toast({
         title: isRegistering ? "Registration failed" : "Login failed",
         description: error.message || "Please check your credentials",
         variant: "destructive",
       });
-    } finally {
       setIsLoading(false);
     }
   };

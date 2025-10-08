@@ -29,10 +29,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       req.session.userId = user.id;
       req.session.userRole = user.role;
       
-      res.json({
-        id: user.id,
-        username: user.username,
-        role: user.role,
+      // Explicitly save session before sending response
+      req.session.save((err) => {
+        if (err) {
+          return res.status(500).json({ message: "Session save failed" });
+        }
+        
+        res.json({
+          id: user.id,
+          username: user.username,
+          role: user.role,
+        });
       });
     } catch (error) {
       res.status(500).json({ message: "Login failed" });
@@ -68,10 +75,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       req.session.userId = user.id;
       req.session.userRole = user.role;
       
-      res.status(201).json({
-        id: user.id,
-        username: user.username,
-        role: user.role,
+      // Explicitly save session before sending response
+      req.session.save((err) => {
+        if (err) {
+          return res.status(500).json({ message: "Session save failed" });
+        }
+        
+        res.status(201).json({
+          id: user.id,
+          username: user.username,
+          role: user.role,
+        });
       });
     } catch (error) {
       res.status(400).json({ message: "Registration failed" });
