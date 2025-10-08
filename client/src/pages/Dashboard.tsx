@@ -18,7 +18,8 @@ import type {
   InternalCompany, 
   PaymentAccount, 
   PaymentType, 
-  ExpenseType 
+  ExpenseType,
+  User 
 } from "@shared/schema";
 import { differenceInDays, format } from "date-fns";
 
@@ -52,11 +53,16 @@ export default function Dashboard() {
     queryKey: ["/api/expense-types"],
   });
 
+  const { data: users = [] } = useQuery<{ id: string; username: string }[]>({
+    queryKey: ["/api/users/approvers"],
+  });
+
   // Helper functions
   const getCompanyById = (id: string) => companies.find(c => c.id === id);
   const getAccountById = (id: string) => paymentAccounts.find(a => a.id === id);
   const getPaymentTypeById = (id: string) => paymentTypes.find(t => t.id === id);
   const getExpenseTypeById = (id: string) => expenseTypes.find(t => t.id === id);
+  const getUserById = (id: string) => users.find(u => u.id === id);
 
   // Determine payment status
   const getPaymentStatus = (schedule: PaymentSchedule): "paid" | "due-soon" | "overdue" | "scheduled" => {
@@ -98,17 +104,22 @@ export default function Dashboard() {
 
   // Enrich payment records
   const enrichedRecords = useMemo(() => {
-    return records.map(record => ({
-      id: record.id,
-      date: new Date(record.paymentDate),
-      company: schedules.find(s => s.expenseId === record.expenseId)?.vendorName || "Unknown",
-      amount: parseFloat(record.amount),
-      payer: record.payer,
-      method: record.paymentMethod,
-      account: record.paymentAccount || undefined,
-      hasConfirmation: !!record.confirmationFile,
-    }));
-  }, [records, schedules]);
+    return records.map(record => {
+      const payer = getUserById(record.paidBy);
+      const account = record.paymentAccountId ? getAccountById(record.paymentAccountId) : undefined;
+      
+      return {
+        id: record.id,
+        date: new Date(record.paymentDate),
+        company: schedules.find(s => s.expenseId === record.expenseId)?.vendorName || "Unknown",
+        amount: parseFloat(record.amount),
+        payer: payer?.username || "Unknown",
+        method: record.paymentMethod,
+        account: account ? `${account.name}${account.lastFourDigits ? ` (*${account.lastFourDigits})` : ''}` : undefined,
+        hasConfirmation: !!record.confirmationFile,
+      };
+    });
+  }, [records, schedules, users, paymentAccounts]);
 
   // Stats calculations
   const totalScheduled = enrichedSchedules.reduce((sum, s) => sum + parseFloat(s.amount), 0);
