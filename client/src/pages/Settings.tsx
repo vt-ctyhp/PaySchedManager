@@ -78,7 +78,7 @@ function InternalCompaniesManager() {
 
   const createMutation = useMutation({
     mutationFn: (data: { name: string; abbreviation: string }) =>
-      apiRequest("/api/internal-companies", "POST", data),
+      apiRequest("POST", "/api/internal-companies", data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/internal-companies"] });
       toast({ title: "Company added successfully" });
@@ -89,7 +89,7 @@ function InternalCompaniesManager() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => apiRequest(`/api/internal-companies/${id}`, "DELETE"),
+    mutationFn: (id: string) => apiRequest("DELETE", `/api/internal-companies/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/internal-companies"] });
       toast({ title: "Company deleted successfully" });
@@ -201,7 +201,7 @@ function PaymentAccountsManager() {
 
   const createMutation = useMutation({
     mutationFn: (data: { name: string; accountType: string; lastFourDigits?: string }) =>
-      apiRequest("/api/payment-accounts", "POST", data),
+      apiRequest("POST", "/api/payment-accounts", data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/payment-accounts"] });
       toast({ title: "Payment account added successfully" });
@@ -210,18 +210,28 @@ function PaymentAccountsManager() {
       setAccountType("");
       setLastFourDigits("");
     },
+    onError: (error: any) => {
+      toast({ 
+        title: "Failed to add payment account", 
+        description: error.message || "Please try again",
+        variant: "destructive" 
+      });
+    },
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => apiRequest(`/api/payment-accounts/${id}`, "DELETE"),
+    mutationFn: (id: string) => apiRequest("DELETE", `/api/payment-accounts/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/payment-accounts"] });
       toast({ title: "Payment account deleted successfully" });
     },
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = () => {
+    if (!name || !accountType) {
+      toast({ title: "Please fill in all required fields", variant: "destructive" });
+      return;
+    }
     createMutation.mutate({ name, accountType, lastFourDigits: lastFourDigits || undefined });
   };
 
@@ -240,7 +250,7 @@ function PaymentAccountsManager() {
             <DialogHeader>
               <DialogTitle>Add Payment Account</DialogTitle>
             </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="account-name">Account Name</Label>
                 <Input
@@ -275,14 +285,14 @@ function PaymentAccountsManager() {
                 />
               </div>
               <div className="flex gap-2">
-                <Button type="button" variant="outline" onClick={() => setOpen(false)} className="flex-1">
+                <Button type="button" variant="outline" onClick={() => setOpen(false)} className="flex-1" data-testid="button-cancel-account">
                   Cancel
                 </Button>
-                <Button type="submit" className="flex-1" data-testid="button-save-account">
-                  Add Account
+                <Button type="button" onClick={handleSubmit} className="flex-1" data-testid="button-save-account" disabled={createMutation.isPending}>
+                  {createMutation.isPending ? "Adding..." : "Add Account"}
                 </Button>
               </div>
-            </form>
+            </div>
           </DialogContent>
         </Dialog>
       </CardHeader>
@@ -336,7 +346,7 @@ function PaymentTypesManager() {
 
   const createMutation = useMutation({
     mutationFn: (data: { name: string }) =>
-      apiRequest("/api/payment-types", "POST", data),
+      apiRequest("POST", "/api/payment-types", data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/payment-types"] });
       toast({ title: "Payment type added successfully" });
@@ -346,7 +356,7 @@ function PaymentTypesManager() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => apiRequest(`/api/payment-types/${id}`, "DELETE"),
+    mutationFn: (id: string) => apiRequest("DELETE", `/api/payment-types/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/payment-types"] });
       toast({ title: "Payment type deleted successfully" });
@@ -443,7 +453,7 @@ function ExpenseTypesManager() {
 
   const createMutation = useMutation({
     mutationFn: (data: { name: string }) =>
-      apiRequest("/api/expense-types", "POST", data),
+      apiRequest("POST", "/api/expense-types", data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/expense-types"] });
       toast({ title: "Expense type added successfully" });
@@ -453,7 +463,7 @@ function ExpenseTypesManager() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => apiRequest(`/api/expense-types/${id}`, "DELETE"),
+    mutationFn: (id: string) => apiRequest("DELETE", `/api/expense-types/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/expense-types"] });
       toast({ title: "Expense type deleted successfully" });

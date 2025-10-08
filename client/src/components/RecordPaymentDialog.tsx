@@ -41,7 +41,7 @@ export default function RecordPaymentDialog({
   });
 
   const createMutation = useMutation({
-    mutationFn: (data: any) => apiRequest("/api/payment-records", "POST", data),
+    mutationFn: (data: any) => apiRequest("POST", "/api/payment-records", data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/payment-records"] });
       queryClient.invalidateQueries({ queryKey: ["/api/payment-schedules"] });

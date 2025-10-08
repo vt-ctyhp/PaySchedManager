@@ -47,7 +47,7 @@ export default function AddPaymentDialog({ trigger }: AddPaymentDialogProps) {
   });
 
   const createMutation = useMutation({
-    mutationFn: (data: any) => apiRequest("/api/payment-schedules", "POST", data),
+    mutationFn: (data: any) => apiRequest("POST", "/api/payment-schedules", data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/payment-schedules"] });
       toast({ title: "Payment schedule created successfully" });
