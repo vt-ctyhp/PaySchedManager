@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Card,
   CardContent,
+  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -20,7 +21,17 @@ import {
 } from "@/components/ui/toggle-group";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { AlertTriangle, ArrowUpRight, CalendarClock } from "lucide-react";
+import { 
+  AlertTriangle, 
+  ArrowUpRight, 
+  CalendarClock, 
+  DollarSign, 
+  TrendingUp,
+  FileText,
+  CheckCircle2,
+  XCircle,
+  AlertCircle
+} from "lucide-react";
 import {
   addDays,
   addMonths,
@@ -185,15 +196,29 @@ export default function Reports() {
     });
   }, [schedules, records, companyLookup, now]);
 
+  const summaryStats = useMemo(() => {
+    const totalUpcoming = upcomingByCompany.reduce((sum, group) => sum + group.totalAmount, 0);
+    const totalScheduled = upcomingByCompany.reduce((sum, group) => sum + group.scheduledCount, 0);
+    const overdueCount = issues.filter(i => i.type === "overdue").length;
+    const issueCount = issues.length;
+
+    return {
+      totalUpcoming,
+      totalScheduled,
+      overdueCount,
+      issueCount,
+    };
+  }, [upcomingByCompany, issues]);
+
   return (
     <div className="min-h-screen bg-background">
       <div className="p-6 space-y-6">
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between flex-wrap gap-4">
+        <div className="flex flex-col gap-4">
+          <div className="flex items-start justify-between flex-wrap gap-4">
             <div>
-              <h1 className="text-3xl font-semibold">Reports Dashboard</h1>
-              <p className="text-sm text-muted-foreground">
-                Upcoming obligations and payment health across internal companies.
+              <h1 className="text-3xl font-semibold" data-testid="text-reports-title">Reports Dashboard</h1>
+              <p className="text-sm text-muted-foreground mt-1">
+                Track upcoming obligations and payment health across internal companies
               </p>
             </div>
             <ToggleGroup
@@ -216,45 +241,142 @@ export default function Reports() {
               ))}
             </ToggleGroup>
           </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <Card data-testid="card-total-upcoming">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-4">
+                <CardTitle className="text-sm font-medium">Total Upcoming</CardTitle>
+                <DollarSign className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-mono font-bold" data-testid="text-total-upcoming">
+                  ${summaryStats.totalUpcoming.toFixed(2)}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {TIMEFRAME_LABELS[timeframe]}
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card data-testid="card-scheduled-count">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-4">
+                <CardTitle className="text-sm font-medium">Scheduled Payments</CardTitle>
+                <FileText className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold" data-testid="text-scheduled-count">
+                  {summaryStats.totalScheduled}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Due in timeframe
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card data-testid="card-overdue-count">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-4">
+                <CardTitle className="text-sm font-medium">Overdue Items</CardTitle>
+                <AlertCircle className="h-4 w-4 text-destructive" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold" data-testid="text-overdue-count">
+                  {summaryStats.overdueCount}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Require immediate attention
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card data-testid="card-issue-count">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-4">
+                <CardTitle className="text-sm font-medium">Total Issues</CardTitle>
+                <TrendingUp className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold" data-testid="text-issue-count">
+                  {summaryStats.issueCount}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Including over/underpayments
+                </p>
+              </CardContent>
+            </Card>
+          </div>
         </div>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-4">
-            <div>
-              <CardTitle>Upcoming Expenses by Company</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                {TIMEFRAME_LABELS[timeframe]} · {format(now, "MMM dd, yyyy")} → {format(timeframeEnd, "MMM dd, yyyy")}.
-              </p>
+          <CardHeader>
+            <div className="flex items-start justify-between flex-wrap gap-4">
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <CalendarClock className="h-5 w-5 text-primary" />
+                  <CardTitle>Upcoming Expenses by Company</CardTitle>
+                </div>
+                <CardDescription className="mt-2">
+                  Breakdown of scheduled payments grouped by internal company · {format(now, "MMM dd, yyyy")} → {format(timeframeEnd, "MMM dd, yyyy")}
+                </CardDescription>
+              </div>
+              <Badge variant="secondary" className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
+                {upcomingByCompany.length} {upcomingByCompany.length === 1 ? 'company' : 'companies'}
+              </Badge>
             </div>
-            <Badge variant="secondary" className="flex items-center gap-1">
-              <CalendarClock className="h-3.5 w-3.5" />
-              Focus period
-            </Badge>
           </CardHeader>
           <CardContent>
             {upcomingByCompany.length === 0 ? (
-              <div className="py-12 text-center text-muted-foreground" data-testid="text-no-upcoming">
-                No upcoming expenses in this timeframe.
+              <div className="rounded-lg border border-dashed py-16 text-center" data-testid="text-no-upcoming">
+                <CheckCircle2 className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <p className="text-lg font-medium mb-1">No upcoming expenses</p>
+                <p className="text-sm text-muted-foreground">
+                  There are no scheduled payments in this timeframe
+                </p>
               </div>
             ) : (
-              <div className="rounded-lg border">
+              <div className="rounded-lg border overflow-hidden">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Internal Company</TableHead>
-                      <TableHead className="text-right">Scheduled Items</TableHead>
-                      <TableHead className="text-right">Total Amount</TableHead>
-                      <TableHead className="text-right">Soonest Due</TableHead>
+                      <TableHead className="font-semibold">Internal Company</TableHead>
+                      <TableHead className="text-right font-semibold">Scheduled Items</TableHead>
+                      <TableHead className="text-right font-semibold">Total Amount</TableHead>
+                      <TableHead className="text-right font-semibold">Soonest Due</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {upcomingByCompany.map((group) => (
-                      <TableRow key={group.companyId} data-testid={`row-company-${group.companyId}`}>
-                        <TableCell className="font-medium">{group.companyName}</TableCell>
-                        <TableCell className="text-right">{group.scheduledCount}</TableCell>
-                        <TableCell className="text-right font-mono">${group.totalAmount.toFixed(2)}</TableCell>
-                        <TableCell className="text-right font-mono text-sm">
-                          {group.soonestDue ? format(group.soonestDue, "MMM dd, yyyy") : "—"}
+                    {upcomingByCompany.map((group, index) => (
+                      <TableRow 
+                        key={group.companyId} 
+                        data-testid={`row-company-${group.companyId}`}
+                        className="hover-elevate"
+                      >
+                        <TableCell className="font-medium">
+                          <div className="flex items-center gap-2">
+                            <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
+                              <span className="text-xs font-semibold text-primary">
+                                {group.companyName.charAt(0)}
+                              </span>
+                            </div>
+                            {group.companyName}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Badge variant="secondary">
+                            {group.scheduledCount} {group.scheduledCount === 1 ? 'item' : 'items'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <span className="font-mono text-lg font-semibold">
+                            ${group.totalAmount.toFixed(2)}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <CalendarClock className="h-3.5 w-3.5 text-muted-foreground" />
+                            <span className="font-mono text-sm">
+                              {group.soonestDue ? format(group.soonestDue, "MMM dd, yyyy") : "—"}
+                            </span>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -266,61 +388,90 @@ export default function Reports() {
         </Card>
 
         <Card>
-          <CardHeader className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-destructive" />
-              <div>
-                <CardTitle>Payment Issues</CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  Underpaid, overpaid, or overdue payments that need attention.
-                </p>
+          <CardHeader>
+            <div className="flex items-start justify-between flex-wrap gap-4">
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="h-5 w-5 text-destructive" />
+                  <CardTitle>Payment Issues</CardTitle>
+                </div>
+                <CardDescription className="mt-2">
+                  Overdue, underpaid, or overpaid items that need attention
+                </CardDescription>
               </div>
+              <Badge 
+                variant={issues.length > 0 ? "destructive" : "outline"} 
+                className="flex items-center gap-1.5"
+              >
+                {issues.length > 0 ? (
+                  <XCircle className="h-3.5 w-3.5" />
+                ) : (
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                )}
+                {issues.length} {issues.length === 1 ? 'issue' : 'issues'}
+              </Badge>
             </div>
-            <Badge variant="outline" className="flex items-center gap-1">
-              <ArrowUpRight className="h-3.5 w-3.5" />
-              {issues.length} flagged
-            </Badge>
           </CardHeader>
           <CardContent>
             {issues.length === 0 ? (
-              <div className="py-12 text-center text-muted-foreground" data-testid="text-no-issues">
-                No issues detected. Great job keeping payments on track!
+              <div className="rounded-lg border border-dashed py-16 text-center" data-testid="text-no-issues">
+                <CheckCircle2 className="h-12 w-12 text-green-500 mx-auto mb-4" />
+                <p className="text-lg font-medium mb-1">All clear!</p>
+                <p className="text-sm text-muted-foreground">
+                  No payment issues detected. Great job keeping payments on track.
+                </p>
               </div>
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-3">
                 {issues.map((issue) => (
                   <div
                     key={`${issue.schedule.id}-${issue.type}`}
-                    className="rounded-lg border p-4"
+                    className="rounded-lg border p-4 hover-elevate"
                     data-testid={`issue-${issue.schedule.id}-${issue.type}`}
                   >
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div>
-                        <div className="flex items-center gap-2">
+                    <div className="flex items-start justify-between gap-4 flex-wrap">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <Badge
-                            variant={issue.type === "overdue" ? "destructive" : issue.type === "underpaid" ? "secondary" : "outline"}
+                            variant={
+                              issue.type === "overdue" 
+                                ? "destructive" 
+                                : issue.type === "underpaid" 
+                                ? "secondary" 
+                                : "outline"
+                            }
+                            className="flex items-center gap-1"
                           >
+                            {issue.type === "overdue" && <AlertCircle className="h-3 w-3" />}
+                            {issue.type === "underpaid" && <ArrowUpRight className="h-3 w-3" />}
+                            {issue.type === "overpaid" && <TrendingUp className="h-3 w-3" />}
                             {issue.type === "overdue" && "Overdue"}
                             {issue.type === "underpaid" && "Underpaid"}
                             {issue.type === "overpaid" && "Overpaid"}
                           </Badge>
-                          <span className="font-semibold">
-                            {issue.schedule.vendorName} · {issue.schedule.expenseId}
+                          <span className="font-semibold text-base">
+                            {issue.schedule.vendorName}
+                          </span>
+                          <span className="text-sm text-muted-foreground font-mono">
+                            {issue.schedule.expenseId}
                           </span>
                         </div>
-                        <p className="text-sm text-muted-foreground mt-1">
+                        <p className="text-sm text-muted-foreground mt-1.5">
                           {issue.company ? issue.company.name : "Unknown company"}
                         </p>
                       </div>
                       <div className="text-right">
-                        <p className="text-sm text-muted-foreground">Scheduled Amount</p>
-                        <p className="font-mono text-base font-semibold">
+                        <p className="text-xs text-muted-foreground mb-1">Scheduled Amount</p>
+                        <p className="font-mono text-lg font-bold">
                           ${Number.parseFloat(issue.schedule.amount).toFixed(2)}
                         </p>
                       </div>
                     </div>
                     <Separator className="my-3" />
-                    <p className="text-sm text-muted-foreground">{issue.detail}</p>
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" />
+                      <p className="text-sm text-muted-foreground">{issue.detail}</p>
+                    </div>
                   </div>
                 ))}
               </div>
