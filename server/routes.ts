@@ -12,6 +12,8 @@ import {
   insertUserSchema,
 } from "@shared/schema";
 import { hashPassword, authenticateUser, requireAuth, requireAdmin, getCurrentUser } from "./auth";
+import { upload } from "./upload";
+import path from "path";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Authentication routes
@@ -441,12 +443,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/payment-records", requireAuth, async (req, res) => {
+  app.post("/api/payment-records", requireAuth, upload.single("confirmationFile"), async (req, res) => {
     try {
-      const data = insertPaymentRecordSchema.parse(req.body);
+      // Parse and validate the multipart form data
+      const data = insertPaymentRecordSchema.parse({
+        paymentScheduleId: req.body.paymentScheduleId || null,
+        expenseId: req.body.expenseId,
+        paymentDate: req.body.paymentDate,
+        amount: req.body.amount,
+        approvedBy: req.body.approvedBy || null,
+        paymentMethod: req.body.paymentMethod,
+        paymentAccountId: req.body.paymentAccountId || null,
+      });
+      
       const record = await storage.createPaymentRecord({
         ...data,
         paidBy: req.session.userId!,
+        confirmationFile: req.file?.filename || null,
       });
       res.status(201).json(record);
     } catch (error) {
@@ -476,6 +489,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ message: "Failed to delete record" });
+    }
+  });
+
+  // File download endpoint
+  app.get("/api/files/:filename", requireAuth, (req, res) => {
+    try {
+      const filename = req.params.filename;
+      
+      // Prevent directory traversal attacks
+      if (filename.includes("..") || filename.includes("/") || filename.includes("\\")) {
+        return res.status(400).json({ message: "Invalid filename" });
+      }
+      
+      const uploadsDir = path.join(process.cwd(), "uploads");
+      const filepath = path.join(uploadsDir, filename);
+      
+      // Verify the resolved path is within the uploads directory
+      const resolvedPath = path.resolve(filepath);
+      const resolvedUploadsDir = path.resolve(uploadsDir);
+      
+      if (!resolvedPath.startsWith(resolvedUploadsDir)) {
+        return res.status(400).json({ message: "Invalid file path" });
+      }
+      
+      res.download(filepath, (err) => {
+        if (err) {
+          res.status(404).json({ message: "File not found" });
+        }
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to download file" });
     }
   });
 

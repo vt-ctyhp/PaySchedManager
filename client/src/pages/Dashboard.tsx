@@ -155,6 +155,7 @@ export default function Dashboard() {
         method: record.paymentMethod,
         account: account ? `${account.name}${account.lastFourDigits ? ` (*${account.lastFourDigits})` : ''}` : undefined,
         hasConfirmation: !!record.confirmationFile,
+        confirmationFile: record.confirmationFile,
       };
     });
   }, [records, schedules, users, paymentAccounts]);

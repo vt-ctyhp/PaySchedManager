@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useQuery } from "@tanstack/react-query";
+import { queryClient } from "@/lib/queryClient";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,6 +41,7 @@ export default function RecordPaymentDialog({
   const [paymentAccountId, setPaymentAccountId] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [selectedExpenseId, setSelectedExpenseId] = useState(preselectedExpenseId || "");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Reset form when dialog opens with pre-filled data
   useEffect(() => {
@@ -67,24 +68,6 @@ export default function RecordPaymentDialog({
     queryKey: ["/api/payment-accounts"],
   });
 
-  const createMutation = useMutation({
-    mutationFn: (data: any) => apiRequest("POST", "/api/payment-records", data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/payment-records"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/payment-schedules"] });
-      toast({ title: "Payment recorded successfully" });
-      setOpen(false);
-      resetForm();
-    },
-    onError: () => {
-      toast({ 
-        title: "Failed to record payment", 
-        description: "Please try again",
-        variant: "destructive" 
-      });
-    },
-  });
-
   const resetForm = () => {
     setPaymentDate(undefined);
     setAmount(scheduledAmount?.toString() || "");
@@ -97,7 +80,7 @@ export default function RecordPaymentDialog({
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!paymentDate) {
@@ -107,16 +90,44 @@ export default function RecordPaymentDialog({
 
     const selectedSchedule = schedules.find(s => s.expenseId === selectedExpenseId);
 
-    createMutation.mutate({
-      paymentScheduleId: scheduleId || selectedSchedule?.id || null,
-      expenseId: selectedExpenseId,
-      paymentDate: paymentDate.toISOString(),
-      amount,
-      approvedBy: approvedBy || null,
-      paymentMethod: method,
-      paymentAccountId: paymentAccountId || null,
-      confirmationFile: file?.name || null,
-    });
+    const formData = new FormData();
+    formData.append("paymentScheduleId", scheduleId || selectedSchedule?.id || "");
+    formData.append("expenseId", selectedExpenseId);
+    formData.append("paymentDate", paymentDate.toISOString());
+    formData.append("amount", amount);
+    formData.append("approvedBy", approvedBy || "");
+    formData.append("paymentMethod", method);
+    formData.append("paymentAccountId", paymentAccountId || "");
+    if (file) {
+      formData.append("confirmationFile", file);
+    }
+
+    setIsSubmitting(true);
+    try {
+      const response = await fetch("/api/payment-records", {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to create payment record");
+      }
+
+      queryClient.invalidateQueries({ queryKey: ["/api/payment-records"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/payment-schedules"] });
+      toast({ title: "Payment recorded successfully" });
+      setOpen(false);
+      resetForm();
+    } catch (error) {
+      toast({ 
+        title: "Failed to record payment", 
+        description: "Please try again",
+        variant: "destructive" 
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -274,11 +285,11 @@ export default function RecordPaymentDialog({
           </div>
 
           <div className="flex gap-2 pt-4">
-            <Button type="button" variant="outline" onClick={() => setOpen(false)} className="flex-1" data-testid="button-cancel-record">
+            <Button type="button" variant="outline" onClick={() => setOpen(false)} className="flex-1" data-testid="button-cancel-record" disabled={isSubmitting}>
               Cancel
             </Button>
-            <Button type="submit" className="flex-1" disabled={createMutation.isPending} data-testid="button-save-record">
-              {createMutation.isPending ? "Recording..." : "Record Payment"}
+            <Button type="submit" className="flex-1" disabled={isSubmitting} data-testid="button-save-record">
+              {isSubmitting ? "Recording..." : "Record Payment"}
             </Button>
           </div>
         </form>

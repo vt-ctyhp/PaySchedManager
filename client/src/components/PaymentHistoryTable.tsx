@@ -13,6 +13,7 @@ interface PaymentRecord {
   method: string;
   account?: string;
   hasConfirmation: boolean;
+  confirmationFile?: string | null;
 }
 
 interface PaymentHistoryTableProps {
@@ -38,6 +39,10 @@ const methodLabels: Record<string, string> = {
 };
 
 export default function PaymentHistoryTable({ payments }: PaymentHistoryTableProps) {
+  const handleDownload = (filename: string) => {
+    window.open(`/api/files/${filename}`, '_blank');
+  };
+
   return (
     <div className="border rounded-lg">
       <Table>
@@ -84,8 +89,13 @@ export default function PaymentHistoryTable({ payments }: PaymentHistoryTablePro
                   {payment.account || "—"}
                 </TableCell>
                 <TableCell className="text-right">
-                  {payment.hasConfirmation ? (
-                    <Button size="icon" variant="ghost" data-testid={`button-download-${payment.id}`}>
+                  {payment.hasConfirmation && payment.confirmationFile ? (
+                    <Button 
+                      size="icon" 
+                      variant="ghost" 
+                      onClick={() => handleDownload(payment.confirmationFile!)}
+                      data-testid={`button-download-${payment.id}`}
+                    >
                       <Download className="h-4 w-4" />
                     </Button>
                   ) : (
