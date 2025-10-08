@@ -266,10 +266,15 @@ export class MemStorage implements IStorage {
 
   async getNextSequenceNumber(internalCompanyAbbr: string, vendorAbbr: string): Promise<number> {
     const prefix = `${internalCompanyAbbr}-${vendorAbbr}`;
-    const existing = Array.from(this.paymentSchedules.values()).filter(
-      (schedule) => schedule.expenseId.startsWith(prefix)
-    );
-    return existing.length + 1;
+    const suffixes = Array.from(this.paymentSchedules.values())
+      .filter((schedule) => schedule.expenseId.startsWith(prefix))
+      .map((schedule) => {
+        const parts = schedule.expenseId.split("-");
+        return Number.parseInt(parts.at(-1) || "0", 10) || 0;
+      });
+
+    const currentMax = suffixes.length > 0 ? Math.max(...suffixes) : 0;
+    return currentMax + 1;
   }
 
   async createPaymentSchedule(schedule: InsertPaymentSchedule): Promise<PaymentSchedule> {
