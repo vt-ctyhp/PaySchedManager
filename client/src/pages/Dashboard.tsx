@@ -182,6 +182,9 @@ export default function Dashboard() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <Button asChild variant="secondary" data-testid="button-reports">
+              <Link href="/reports">Reports</Link>
+            </Button>
             <Button asChild variant="outline" size="icon" data-testid="button-settings">
               <Link href="/settings">
                 <SettingsIcon className="h-4 w-4" />
