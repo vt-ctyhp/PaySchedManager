@@ -39,6 +39,7 @@ export default function RecordPaymentDialog({
   const [approvedBy, setApprovedBy] = useState("");
   const [method, setMethod] = useState("");
   const [paymentAccountId, setPaymentAccountId] = useState("");
+  const [approvalFile, setApprovalFile] = useState<File | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [selectedExpenseId, setSelectedExpenseId] = useState(preselectedExpenseId || "");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -51,6 +52,7 @@ export default function RecordPaymentDialog({
       setApprovedBy("");
       setMethod("");
       setPaymentAccountId("");
+      setApprovalFile(null);
       setFile(null);
       setSelectedExpenseId(preselectedExpenseId || "");
     }
@@ -74,6 +76,7 @@ export default function RecordPaymentDialog({
     setApprovedBy("");
     setMethod("");
     setPaymentAccountId("");
+    setApprovalFile(null);
     setFile(null);
     if (!preselectedExpenseId) {
       setSelectedExpenseId("");
@@ -98,6 +101,9 @@ export default function RecordPaymentDialog({
     formData.append("approvedBy", approvedBy || "");
     formData.append("paymentMethod", method);
     formData.append("paymentAccountId", paymentAccountId || "");
+    if (approvalFile) {
+      formData.append("approvalScreenshot", approvalFile);
+    }
     if (file) {
       formData.append("confirmationFile", file);
     }
@@ -261,6 +267,27 @@ export default function RecordPaymentDialog({
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="approval-file">Approval Screenshot</Label>
+            <div className="flex gap-2">
+              <Input
+                id="approval-file"
+                type="file"
+                onChange={(e) => setApprovalFile(e.target.files?.[0] || null)}
+                className="flex-1"
+                data-testid="input-approval-file"
+              />
+              <Button type="button" size="icon" variant="outline">
+                <Upload className="h-4 w-4" />
+              </Button>
+            </div>
+            {approvalFile && (
+              <p className="text-xs text-muted-foreground" data-testid="text-approval-file-name">
+                {approvalFile.name}
+              </p>
+            )}
           </div>
 
           <div className="space-y-2">
