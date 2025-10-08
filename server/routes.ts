@@ -93,6 +93,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
+  // User list for approvers (accessible to all authenticated users)
+  app.get("/api/users/approvers", requireAuth, async (req, res) => {
+    try {
+      const users = await storage.getAllUsers();
+      const approvers = users.map(u => ({
+        id: u.id,
+        username: u.username,
+      }));
+      res.json(approvers);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch users" });
+    }
+  });
+
   // User Management (Admin only)
   app.get("/api/users", requireAdmin, async (req, res) => {
     try {

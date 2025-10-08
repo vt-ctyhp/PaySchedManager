@@ -11,7 +11,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar as CalendarIcon, Upload } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
-import type { PaymentSchedule } from "@shared/schema";
+import type { PaymentSchedule, PaymentAccount, User } from "@shared/schema";
 
 interface RecordPaymentDialogProps {
   trigger?: React.ReactNode;
@@ -30,14 +30,22 @@ export default function RecordPaymentDialog({
   const [open, setOpen] = useState(false);
   const [paymentDate, setPaymentDate] = useState<Date>();
   const [amount, setAmount] = useState(scheduledAmount?.toString() || "");
-  const [payer, setPayer] = useState("");
+  const [approvedBy, setApprovedBy] = useState("");
   const [method, setMethod] = useState("");
-  const [account, setAccount] = useState("");
+  const [paymentAccountId, setPaymentAccountId] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [selectedExpenseId, setSelectedExpenseId] = useState(preselectedExpenseId || "");
 
   const { data: schedules = [] } = useQuery<PaymentSchedule[]>({
     queryKey: ["/api/payment-schedules"],
+  });
+
+  const { data: users = [] } = useQuery<{ id: string; username: string }[]>({
+    queryKey: ["/api/users/approvers"],
+  });
+
+  const { data: paymentAccounts = [] } = useQuery<PaymentAccount[]>({
+    queryKey: ["/api/payment-accounts"],
   });
 
   const createMutation = useMutation({
@@ -61,9 +69,9 @@ export default function RecordPaymentDialog({
   const resetForm = () => {
     setPaymentDate(undefined);
     setAmount(scheduledAmount?.toString() || "");
-    setPayer("");
+    setApprovedBy("");
     setMethod("");
-    setAccount("");
+    setPaymentAccountId("");
     setFile(null);
     if (!preselectedExpenseId) {
       setSelectedExpenseId("");
@@ -85,9 +93,9 @@ export default function RecordPaymentDialog({
       expenseId: selectedExpenseId,
       paymentDate: paymentDate.toISOString(),
       amount,
-      payer,
+      approvedBy: approvedBy || null,
       paymentMethod: method,
-      paymentAccount: account || null,
+      paymentAccountId: paymentAccountId || null,
       confirmationFile: file?.name || null,
     });
   };
@@ -175,15 +183,19 @@ export default function RecordPaymentDialog({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="payer">Who Paid</Label>
-            <Input
-              id="payer"
-              value={payer}
-              onChange={(e) => setPayer(e.target.value)}
-              placeholder="e.g., John Doe"
-              data-testid="input-payer"
-              required
-            />
+            <Label htmlFor="approved-by">Approved By</Label>
+            <Select value={approvedBy} onValueChange={setApprovedBy}>
+              <SelectTrigger id="approved-by" data-testid="select-approved-by">
+                <SelectValue placeholder="Select approver (optional)" />
+              </SelectTrigger>
+              <SelectContent>
+                {users.map((user) => (
+                  <SelectItem key={user.id} value={user.id}>
+                    {user.username}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="space-y-2">
@@ -206,14 +218,19 @@ export default function RecordPaymentDialog({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="account">Account/Card (Last 4 digits)</Label>
-            <Input
-              id="account"
-              value={account}
-              onChange={(e) => setAccount(e.target.value)}
-              placeholder="e.g., **** 1234"
-              data-testid="input-account"
-            />
+            <Label htmlFor="payment-account">Payment Account</Label>
+            <Select value={paymentAccountId} onValueChange={setPaymentAccountId}>
+              <SelectTrigger id="payment-account" data-testid="select-payment-account">
+                <SelectValue placeholder="Select account (optional)" />
+              </SelectTrigger>
+              <SelectContent>
+                {paymentAccounts.map((account) => (
+                  <SelectItem key={account.id} value={account.id}>
+                    {account.name} {account.lastFourDigits && `(**** ${account.lastFourDigits})`}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="space-y-2">
