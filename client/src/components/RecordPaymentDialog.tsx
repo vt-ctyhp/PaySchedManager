@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,19 +10,23 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as CalendarIcon, Upload } from "lucide-react";
 import { format } from "date-fns";
+import { useToast } from "@/hooks/use-toast";
+import type { PaymentSchedule } from "@shared/schema";
 
 interface RecordPaymentDialogProps {
   trigger?: React.ReactNode;
   scheduleId?: string;
-  company?: string;
+  expenseId?: string;
   scheduledAmount?: number;
 }
 
 export default function RecordPaymentDialog({ 
   trigger, 
-  company,
+  scheduleId,
+  expenseId: preselectedExpenseId,
   scheduledAmount,
 }: RecordPaymentDialogProps) {
+  const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [paymentDate, setPaymentDate] = useState<Date>();
   const [amount, setAmount] = useState(scheduledAmount?.toString() || "");
@@ -28,11 +34,62 @@ export default function RecordPaymentDialog({
   const [method, setMethod] = useState("");
   const [account, setAccount] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [selectedExpenseId, setSelectedExpenseId] = useState(preselectedExpenseId || "");
+
+  const { data: schedules = [] } = useQuery<PaymentSchedule[]>({
+    queryKey: ["/api/payment-schedules"],
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (data: any) => apiRequest("/api/payment-records", "POST", data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/payment-records"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/payment-schedules"] });
+      toast({ title: "Payment recorded successfully" });
+      setOpen(false);
+      resetForm();
+    },
+    onError: () => {
+      toast({ 
+        title: "Failed to record payment", 
+        description: "Please try again",
+        variant: "destructive" 
+      });
+    },
+  });
+
+  const resetForm = () => {
+    setPaymentDate(undefined);
+    setAmount(scheduledAmount?.toString() || "");
+    setPayer("");
+    setMethod("");
+    setAccount("");
+    setFile(null);
+    if (!preselectedExpenseId) {
+      setSelectedExpenseId("");
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("Record payment:", { paymentDate, amount, payer, method, account, file });
-    setOpen(false);
+    
+    if (!paymentDate) {
+      toast({ title: "Please select a payment date", variant: "destructive" });
+      return;
+    }
+
+    const selectedSchedule = schedules.find(s => s.expenseId === selectedExpenseId);
+
+    createMutation.mutate({
+      paymentScheduleId: scheduleId || selectedSchedule?.id || null,
+      expenseId: selectedExpenseId,
+      paymentDate: paymentDate.toISOString(),
+      amount,
+      payer,
+      paymentMethod: method,
+      paymentAccount: account || null,
+      confirmationFile: file?.name || null,
+    });
   };
 
   return (
@@ -47,9 +104,34 @@ export default function RecordPaymentDialog({
       <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Record Payment</DialogTitle>
-          {company && <p className="text-sm text-muted-foreground mt-1">for {company}</p>}
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
+          {!preselectedExpenseId && (
+            <div className="space-y-2">
+              <Label htmlFor="expense-id">Expense ID</Label>
+              <Select value={selectedExpenseId} onValueChange={setSelectedExpenseId} required>
+                <SelectTrigger id="expense-id" data-testid="select-expense-id">
+                  <SelectValue placeholder="Select expense" />
+                </SelectTrigger>
+                <SelectContent>
+                  {schedules.map((schedule) => (
+                    <SelectItem key={schedule.id} value={schedule.expenseId}>
+                      {schedule.expenseId} - {schedule.vendorName} (${schedule.amount})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {preselectedExpenseId && (
+            <div className="p-3 bg-muted rounded-md">
+              <p className="text-sm">
+                <span className="font-medium">Expense ID:</span> {preselectedExpenseId}
+              </p>
+            </div>
+          )}
+
           <div className="space-y-2">
             <Label>Payment Date</Label>
             <Popover>
@@ -116,6 +198,8 @@ export default function RecordPaymentDialog({
                 <SelectItem value="bank-transfer">Bank Transfer</SelectItem>
                 <SelectItem value="cash">Cash</SelectItem>
                 <SelectItem value="paypal">PayPal</SelectItem>
+                <SelectItem value="ach">ACH</SelectItem>
+                <SelectItem value="wire">Wire</SelectItem>
                 <SelectItem value="other">Other</SelectItem>
               </SelectContent>
             </Select>
@@ -157,8 +241,8 @@ export default function RecordPaymentDialog({
             <Button type="button" variant="outline" onClick={() => setOpen(false)} className="flex-1" data-testid="button-cancel-record">
               Cancel
             </Button>
-            <Button type="submit" className="flex-1" data-testid="button-save-record">
-              Record Payment
+            <Button type="submit" className="flex-1" disabled={createMutation.isPending} data-testid="button-save-record">
+              {createMutation.isPending ? "Recording..." : "Record Payment"}
             </Button>
           </div>
         </form>

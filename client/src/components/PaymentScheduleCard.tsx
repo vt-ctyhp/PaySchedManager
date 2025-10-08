@@ -16,6 +16,7 @@ type PaymentFrequency = "one-time" | "bi-weekly" | "monthly" | "quarterly" | "ye
 interface PaymentScheduleCardProps {
   id: string;
   company: string;
+  expenseId?: string;
   amount: number;
   dueDate: Date;
   frequency: PaymentFrequency;
@@ -43,6 +44,7 @@ const frequencyLabels = {
 export default function PaymentScheduleCard({
   id,
   company,
+  expenseId,
   amount,
   dueDate,
   frequency,
@@ -58,6 +60,11 @@ export default function PaymentScheduleCard({
     <Card className="hover-elevate active-elevate-2">
       <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0 pb-3">
         <div className="flex-1 min-w-0">
+          {expenseId && (
+            <p className="text-xs font-mono text-muted-foreground mb-1" data-testid={`text-expense-id-${id}`}>
+              {expenseId}
+            </p>
+          )}
           <h3 className="text-lg font-semibold truncate" data-testid={`text-company-${id}`}>
             {company}
           </h3>

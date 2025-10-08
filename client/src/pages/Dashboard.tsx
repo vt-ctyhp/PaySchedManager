@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { DollarSign, Calendar, Clock, AlertCircle } from "lucide-react";
+import { useState, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { DollarSign, Calendar, Clock, AlertCircle, Settings as SettingsIcon } from "lucide-react";
 import QuickStatsCard from "@/components/QuickStatsCard";
 import PaymentScheduleCard from "@/components/PaymentScheduleCard";
 import AddPaymentDialog from "@/components/AddPaymentDialog";
@@ -9,110 +10,112 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Search } from "lucide-react";
-
-// Mock data - todo: remove mock functionality
-const mockSchedules = [
-  {
-    id: "1",
-    company: "Netflix",
-    amount: 15.99,
-    dueDate: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000),
-    frequency: "monthly" as const,
-    status: "due-soon" as const,
-  },
-  {
-    id: "2",
-    company: "Spotify",
-    amount: 9.99,
-    dueDate: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000),
-    frequency: "monthly" as const,
-    status: "scheduled" as const,
-  },
-  {
-    id: "3",
-    company: "Adobe Creative Cloud",
-    amount: 54.99,
-    dueDate: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000),
-    frequency: "monthly" as const,
-    status: "overdue" as const,
-  },
-  {
-    id: "4",
-    company: "Amazon Prime",
-    amount: 14.99,
-    dueDate: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000),
-    frequency: "monthly" as const,
-    status: "scheduled" as const,
-  },
-  {
-    id: "5",
-    company: "GitHub Pro",
-    amount: 7.00,
-    dueDate: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000),
-    frequency: "monthly" as const,
-    status: "scheduled" as const,
-  },
-  {
-    id: "6",
-    company: "Insurance Premium",
-    amount: 450.00,
-    dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-    frequency: "quarterly" as const,
-    status: "scheduled" as const,
-  },
-];
-
-const mockHistory = [
-  {
-    id: "h1",
-    date: new Date("2024-01-15"),
-    company: "Netflix",
-    amount: 15.99,
-    payer: "John Doe",
-    method: "credit-card",
-    account: "**** 1234",
-    hasConfirmation: true,
-  },
-  {
-    id: "h2",
-    date: new Date("2024-01-10"),
-    company: "Spotify",
-    amount: 9.99,
-    payer: "Jane Smith",
-    method: "paypal",
-    hasConfirmation: false,
-  },
-  {
-    id: "h3",
-    date: new Date("2024-01-05"),
-    company: "Adobe Creative Cloud",
-    amount: 54.99,
-    payer: "John Doe",
-    method: "credit-card",
-    account: "**** 5678",
-    hasConfirmation: true,
-  },
-];
+import { Link } from "wouter";
+import type { 
+  PaymentSchedule, 
+  PaymentRecord, 
+  InternalCompany, 
+  PaymentAccount, 
+  PaymentType, 
+  ExpenseType 
+} from "@shared/schema";
+import { differenceInDays, format } from "date-fns";
 
 export default function Dashboard() {
-  const [schedules] = useState(mockSchedules);
-  const [history] = useState(mockHistory);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("all");
 
-  const filteredSchedules = schedules.filter((schedule) => {
-    const matchesSearch = schedule.company.toLowerCase().includes(searchQuery.toLowerCase());
+  const { data: schedules = [] } = useQuery<PaymentSchedule[]>({
+    queryKey: ["/api/payment-schedules"],
+  });
+
+  const { data: records = [] } = useQuery<PaymentRecord[]>({
+    queryKey: ["/api/payment-records"],
+  });
+
+  const { data: companies = [] } = useQuery<InternalCompany[]>({
+    queryKey: ["/api/internal-companies"],
+  });
+
+  const { data: paymentAccounts = [] } = useQuery<PaymentAccount[]>({
+    queryKey: ["/api/payment-accounts"],
+  });
+
+  const { data: paymentTypes = [] } = useQuery<PaymentType[]>({
+    queryKey: ["/api/payment-types"],
+  });
+
+  const { data: expenseTypes = [] } = useQuery<ExpenseType[]>({
+    queryKey: ["/api/expense-types"],
+  });
+
+  // Helper functions
+  const getCompanyById = (id: string) => companies.find(c => c.id === id);
+  const getAccountById = (id: string) => paymentAccounts.find(a => a.id === id);
+  const getPaymentTypeById = (id: string) => paymentTypes.find(t => t.id === id);
+  const getExpenseTypeById = (id: string) => expenseTypes.find(t => t.id === id);
+
+  // Determine payment status
+  const getPaymentStatus = (schedule: PaymentSchedule): "paid" | "due-soon" | "overdue" | "scheduled" => {
+    const dueDate = new Date(schedule.nextDueDate);
+    const today = new Date();
+    const daysUntil = differenceInDays(dueDate, today);
+
+    if (daysUntil < 0) return "overdue";
+    if (daysUntil <= 7) return "due-soon";
+    return "scheduled";
+  };
+
+  // Enrich schedules with status
+  const enrichedSchedules = useMemo(() => {
+    return schedules.map(schedule => ({
+      ...schedule,
+      status: getPaymentStatus(schedule),
+      company: getCompanyById(schedule.internalCompanyId),
+      account: getAccountById(schedule.paymentAccountId),
+      paymentType: getPaymentTypeById(schedule.paymentTypeId),
+      expenseType: getExpenseTypeById(schedule.expenseTypeId),
+    }));
+  }, [schedules, companies, paymentAccounts, paymentTypes, expenseTypes]);
+
+  // Filter schedules
+  const filteredSchedules = enrichedSchedules.filter((schedule) => {
+    const matchesSearch = 
+      schedule.vendorName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      schedule.expenseId.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      schedule.company?.name.toLowerCase().includes(searchQuery.toLowerCase());
+    
     const matchesTab = activeTab === "all" || 
       (activeTab === "due-soon" && schedule.status === "due-soon") ||
       (activeTab === "overdue" && schedule.status === "overdue") ||
       (activeTab === "recurring" && ["bi-weekly", "monthly", "quarterly", "yearly"].includes(schedule.frequency));
+    
     return matchesSearch && matchesTab;
   });
 
-  const totalScheduled = schedules.reduce((sum, s) => sum + s.amount, 0);
-  const dueSoon = schedules.filter(s => s.status === "due-soon").length;
-  const overdue = schedules.filter(s => s.status === "overdue").length;
-  const paidThisMonth = history.length;
+  // Enrich payment records
+  const enrichedRecords = useMemo(() => {
+    return records.map(record => ({
+      id: record.id,
+      date: new Date(record.paymentDate),
+      company: schedules.find(s => s.expenseId === record.expenseId)?.vendorName || "Unknown",
+      amount: parseFloat(record.amount),
+      payer: record.payer,
+      method: record.paymentMethod,
+      account: record.paymentAccount || undefined,
+      hasConfirmation: !!record.confirmationFile,
+    }));
+  }, [records, schedules]);
+
+  // Stats calculations
+  const totalScheduled = enrichedSchedules.reduce((sum, s) => sum + parseFloat(s.amount), 0);
+  const dueSoon = enrichedSchedules.filter(s => s.status === "due-soon").length;
+  const overdue = enrichedSchedules.filter(s => s.status === "overdue").length;
+  const paidThisMonth = records.filter(r => {
+    const recordDate = new Date(r.paymentDate);
+    const now = new Date();
+    return recordDate.getMonth() === now.getMonth() && recordDate.getFullYear() === now.getFullYear();
+  }).length;
 
   return (
     <div className="min-h-screen bg-background">
@@ -125,7 +128,14 @@ export default function Dashboard() {
               Manage your recurring and one-time payments
             </p>
           </div>
-          <AddPaymentDialog />
+          <div className="flex items-center gap-2">
+            <Button asChild variant="outline" size="icon" data-testid="button-settings">
+              <Link href="/settings">
+                <SettingsIcon className="h-4 w-4" />
+              </Link>
+            </Button>
+            <AddPaymentDialog />
+          </div>
         </div>
 
         {/* Quick Stats */}
@@ -134,13 +144,19 @@ export default function Dashboard() {
             title="Total Scheduled"
             value={`$${totalScheduled.toFixed(2)}`}
             icon={DollarSign}
-            description={`${schedules.length} active payments`}
+            description={`${enrichedSchedules.length} active payments`}
           />
           <QuickStatsCard
             title="Paid This Month"
             value={paidThisMonth}
             icon={Calendar}
-            description={`$${history.reduce((sum, h) => sum + h.amount, 0).toFixed(2)} total`}
+            description={`$${enrichedRecords
+              .filter(r => {
+                const now = new Date();
+                return r.date.getMonth() === now.getMonth() && r.date.getFullYear() === now.getFullYear();
+              })
+              .reduce((sum, r) => sum + r.amount, 0)
+              .toFixed(2)} total`}
           />
           <QuickStatsCard
             title="Due Soon"
@@ -168,7 +184,7 @@ export default function Dashboard() {
             <div className="relative flex-1 max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search payments..."
+                placeholder="Search by vendor, expense ID, or company..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-9"
@@ -197,12 +213,18 @@ export default function Dashboard() {
                   {filteredSchedules.map((schedule) => (
                     <PaymentScheduleCard
                       key={schedule.id}
-                      {...schedule}
+                      id={schedule.id}
+                      company={`${schedule.company?.abbreviation || ""} - ${schedule.vendorName}`}
+                      expenseId={schedule.expenseId}
+                      amount={parseFloat(schedule.amount)}
+                      dueDate={new Date(schedule.nextDueDate)}
+                      frequency={schedule.frequency as any}
+                      status={schedule.status}
                       onEdit={(id) => console.log("Edit", id)}
                       onDelete={(id) => console.log("Delete", id)}
                       onRecordPayment={(id) => {
-                        const schedule = schedules.find(s => s.id === id);
-                        console.log("Record payment for", schedule?.company);
+                        const s = schedules.find(sch => sch.id === id);
+                        console.log("Record payment for", s?.expenseId);
                       }}
                     />
                   ))}
@@ -216,7 +238,7 @@ export default function Dashboard() {
                 <h2 className="text-xl font-semibold">Payment History</h2>
                 <RecordPaymentDialog />
               </div>
-              <PaymentHistoryTable payments={history} />
+              <PaymentHistoryTable payments={enrichedRecords} />
             </div>
           </TabsContent>
         </Tabs>
