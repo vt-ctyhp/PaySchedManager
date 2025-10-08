@@ -44,6 +44,8 @@ export default function Dashboard() {
   const [editingSchedule, setEditingSchedule] = useState<PaymentSchedule | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [deletingScheduleId, setDeletingScheduleId] = useState<string | null>(null);
+  const [recordingSchedule, setRecordingSchedule] = useState<PaymentSchedule | null>(null);
+  const [recordDialogOpen, setRecordDialogOpen] = useState(false);
   const canDelete = user?.role === "Admin";
 
   const { data: schedules = [] } = useQuery<PaymentSchedule[]>({
@@ -280,7 +282,10 @@ export default function Dashboard() {
                       onDelete={(id) => setDeletingScheduleId(id)}
                       onRecordPayment={(id) => {
                         const s = schedules.find(sch => sch.id === id);
-                        console.log("Record payment for", s?.expenseId);
+                        if (s) {
+                          setRecordingSchedule(s);
+                          setRecordDialogOpen(true);
+                        }
                       }}
                       canDelete={canDelete}
                     />
@@ -293,7 +298,30 @@ export default function Dashboard() {
             <div>
               <div className="flex items-center justify-between mb-4 gap-4 flex-wrap">
                 <h2 className="text-xl font-semibold">Payment History</h2>
-                <RecordPaymentDialog />
+                <RecordPaymentDialog 
+                  trigger={
+                    <Button 
+                      variant="outline" 
+                      data-testid="button-record-payment"
+                      onClick={() => {
+                        setRecordingSchedule(null);
+                        setRecordDialogOpen(true);
+                      }}
+                    >
+                      Record Payment
+                    </Button>
+                  }
+                  open={recordDialogOpen}
+                  onOpenChange={(open) => {
+                    setRecordDialogOpen(open);
+                    if (!open) {
+                      setRecordingSchedule(null);
+                    }
+                  }}
+                  scheduleId={recordingSchedule?.id}
+                  expenseId={recordingSchedule?.expenseId}
+                  scheduledAmount={recordingSchedule ? parseFloat(recordingSchedule.amount) : undefined}
+                />
               </div>
               <PaymentHistoryTable payments={enrichedRecords} />
             </div>

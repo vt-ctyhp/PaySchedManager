@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -18,6 +18,8 @@ interface RecordPaymentDialogProps {
   scheduleId?: string;
   expenseId?: string;
   scheduledAmount?: number;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 export default function RecordPaymentDialog({ 
@@ -25,9 +27,13 @@ export default function RecordPaymentDialog({
   scheduleId,
   expenseId: preselectedExpenseId,
   scheduledAmount,
+  open: controlledOpen,
+  onOpenChange,
 }: RecordPaymentDialogProps) {
   const { toast } = useToast();
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = controlledOpen !== undefined ? controlledOpen : internalOpen;
+  const setOpen = onOpenChange || setInternalOpen;
   const [paymentDate, setPaymentDate] = useState<Date>();
   const [amount, setAmount] = useState(scheduledAmount?.toString() || "");
   const [approvedBy, setApprovedBy] = useState("");
@@ -35,6 +41,19 @@ export default function RecordPaymentDialog({
   const [paymentAccountId, setPaymentAccountId] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [selectedExpenseId, setSelectedExpenseId] = useState(preselectedExpenseId || "");
+
+  // Reset form when dialog opens with pre-filled data
+  useEffect(() => {
+    if (open) {
+      setPaymentDate(undefined);
+      setAmount(scheduledAmount?.toString() || "");
+      setApprovedBy("");
+      setMethod("");
+      setPaymentAccountId("");
+      setFile(null);
+      setSelectedExpenseId(preselectedExpenseId || "");
+    }
+  }, [open, preselectedExpenseId, scheduledAmount]);
 
   const { data: schedules = [] } = useQuery<PaymentSchedule[]>({
     queryKey: ["/api/payment-schedules"],
