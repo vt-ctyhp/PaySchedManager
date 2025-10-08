@@ -85,11 +85,13 @@ export default function Settings() {
 }
 
 function InternalCompaniesManager() {
+  const { user } = useAuth();
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [abbreviation, setAbbreviation] = useState("");
+  const canDelete = user?.role === "Admin";
 
   const { data: companies = [], isLoading } = useQuery<InternalCompany[]>({
     queryKey: ["/api/internal-companies"],
@@ -188,14 +190,16 @@ function InternalCompaniesManager() {
                   <TableCell data-testid={`text-company-${company.id}`}>{company.name}</TableCell>
                   <TableCell data-testid={`text-abbr-${company.id}`}>{company.abbreviation}</TableCell>
                   <TableCell>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      onClick={() => deleteMutation.mutate(company.id)}
-                      data-testid={`button-delete-company-${company.id}`}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    {canDelete && (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => deleteMutation.mutate(company.id)}
+                        data-testid={`button-delete-company-${company.id}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}
@@ -208,11 +212,13 @@ function InternalCompaniesManager() {
 }
 
 function PaymentAccountsManager() {
+  const { user } = useAuth();
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [accountType, setAccountType] = useState("");
   const [lastFourDigits, setLastFourDigits] = useState("");
+  const canDelete = user?.role === "Admin";
 
   const { data: accounts = [], isLoading } = useQuery<PaymentAccount[]>({
     queryKey: ["/api/payment-accounts"],
@@ -335,14 +341,16 @@ function PaymentAccountsManager() {
                   <TableCell>{account.accountType}</TableCell>
                   <TableCell className="font-mono">{account.lastFourDigits || "—"}</TableCell>
                   <TableCell>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      onClick={() => deleteMutation.mutate(account.id)}
-                      data-testid={`button-delete-account-${account.id}`}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    {canDelete && (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => deleteMutation.mutate(account.id)}
+                        data-testid={`button-delete-account-${account.id}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}
@@ -355,9 +363,11 @@ function PaymentAccountsManager() {
 }
 
 function PaymentTypesManager() {
+  const { user } = useAuth();
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
+  const canDelete = user?.role === "Admin";
 
   const { data: types = [], isLoading } = useQuery<PaymentType[]>({
     queryKey: ["/api/payment-types"],
@@ -442,14 +452,16 @@ function PaymentTypesManager() {
                 <TableRow key={type.id}>
                   <TableCell data-testid={`text-payment-type-${type.id}`}>{type.name}</TableCell>
                   <TableCell>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      onClick={() => deleteMutation.mutate(type.id)}
-                      data-testid={`button-delete-payment-type-${type.id}`}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    {canDelete && (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => deleteMutation.mutate(type.id)}
+                        data-testid={`button-delete-payment-type-${type.id}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}
@@ -462,9 +474,11 @@ function PaymentTypesManager() {
 }
 
 function ExpenseTypesManager() {
+  const { user } = useAuth();
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
+  const canDelete = user?.role === "Admin";
 
   const { data: types = [], isLoading } = useQuery<ExpenseType[]>({
     queryKey: ["/api/expense-types"],
@@ -549,14 +563,16 @@ function ExpenseTypesManager() {
                 <TableRow key={type.id}>
                   <TableCell data-testid={`text-expense-type-${type.id}`}>{type.name}</TableCell>
                   <TableCell>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      onClick={() => deleteMutation.mutate(type.id)}
-                      data-testid={`button-delete-expense-type-${type.id}`}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    {canDelete && (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => deleteMutation.mutate(type.id)}
+                        data-testid={`button-delete-expense-type-${type.id}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}

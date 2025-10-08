@@ -24,6 +24,7 @@ interface PaymentScheduleCardProps {
   onEdit?: (id: string) => void;
   onDelete?: (id: string) => void;
   onRecordPayment?: (id: string) => void;
+  canDelete?: boolean;
 }
 
 const statusConfig = {
@@ -52,6 +53,7 @@ export default function PaymentScheduleCard({
   onEdit,
   onDelete,
   onRecordPayment,
+  canDelete = true,
 }: PaymentScheduleCardProps) {
   const config = statusConfig[status];
   const daysUntil = formatDistanceToNow(dueDate, { addSuffix: true });
@@ -87,14 +89,16 @@ export default function PaymentScheduleCard({
               <Pencil className="h-4 w-4 mr-2" />
               Edit
             </DropdownMenuItem>
-            <DropdownMenuItem 
-              onClick={() => onDelete?.(id)} 
-              className="text-destructive"
-              data-testid={`button-delete-${id}`}
-            >
-              <Trash2 className="h-4 w-4 mr-2" />
-              Delete
-            </DropdownMenuItem>
+            {canDelete && (
+              <DropdownMenuItem 
+                onClick={() => onDelete?.(id)} 
+                className="text-destructive"
+                data-testid={`button-delete-${id}`}
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete
+              </DropdownMenuItem>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </CardHeader>

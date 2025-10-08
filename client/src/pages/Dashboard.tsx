@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Search } from "lucide-react";
 import { Link } from "wouter";
+import { useAuth } from "@/hooks/useAuth";
 import type { 
   PaymentSchedule, 
   PaymentRecord, 
@@ -22,8 +23,10 @@ import type {
 import { differenceInDays, format } from "date-fns";
 
 export default function Dashboard() {
+  const { user } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("all");
+  const canDelete = user?.role === "Admin";
 
   const { data: schedules = [] } = useQuery<PaymentSchedule[]>({
     queryKey: ["/api/payment-schedules"],
@@ -226,6 +229,7 @@ export default function Dashboard() {
                         const s = schedules.find(sch => sch.id === id);
                         console.log("Record payment for", s?.expenseId);
                       }}
+                      canDelete={canDelete}
                     />
                   ))}
                 </div>
