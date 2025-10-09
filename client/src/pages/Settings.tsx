@@ -32,7 +32,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import type { InternalCompany, PaymentAccount, PaymentType, ExpenseType, User } from "@shared/schema";
+import type { InternalCompany, PaymentAccount, PaymentType, ExpenseType, User, AccountMapping } from "@shared/schema";
 
 export default function Settings() {
   const { user } = useAuth();
@@ -52,6 +52,7 @@ export default function Settings() {
           <TabsList>
             <TabsTrigger value="companies" data-testid="tab-companies">Internal Companies</TabsTrigger>
             <TabsTrigger value="accounts" data-testid="tab-accounts">Payment Accounts</TabsTrigger>
+            <TabsTrigger value="account-mappings" data-testid="tab-account-mappings">Account Mappings</TabsTrigger>
             <TabsTrigger value="payment-types" data-testid="tab-payment-types">Payment Types</TabsTrigger>
             <TabsTrigger value="expense-types" data-testid="tab-expense-types">Expense Types</TabsTrigger>
             {isAdmin && <TabsTrigger value="users" data-testid="tab-users">Users</TabsTrigger>}
@@ -63,6 +64,10 @@ export default function Settings() {
 
           <TabsContent value="accounts">
             <PaymentAccountsManager />
+          </TabsContent>
+
+          <TabsContent value="account-mappings">
+            <AccountMappingsManager />
           </TabsContent>
 
           <TabsContent value="payment-types">
@@ -354,6 +359,224 @@ function PaymentAccountsManager() {
                   </TableCell>
                 </TableRow>
               ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function AccountMappingsManager() {
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [csvAccountName, setCsvAccountName] = useState("");
+  const [paymentAccountId, setPaymentAccountId] = useState("");
+
+  const { data: mappings = [], isLoading } = useQuery<AccountMapping[]>({
+    queryKey: ["/api/account-mappings"],
+  });
+
+  const { data: paymentAccounts = [] } = useQuery<PaymentAccount[]>({
+    queryKey: ["/api/payment-accounts"],
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (data: { csvAccountName: string; paymentAccountId: string }) =>
+      apiRequest("POST", "/api/account-mappings", data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/account-mappings"] });
+      toast({ title: "Account mapping added successfully" });
+      resetForm();
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to add mapping",
+        description: error.message || "Please try again",
+        variant: "destructive"
+      });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: { csvAccountName?: string; paymentAccountId?: string } }) =>
+      apiRequest("PUT", `/api/account-mappings/${id}`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/account-mappings"] });
+      toast({ title: "Account mapping updated successfully" });
+      resetForm();
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to update mapping",
+        description: error.message || "Please try again",
+        variant: "destructive"
+      });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => apiRequest("DELETE", `/api/account-mappings/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/account-mappings"] });
+      toast({ title: "Account mapping deleted successfully" });
+    },
+  });
+
+  const resetForm = () => {
+    setOpen(false);
+    setEditingId(null);
+    setCsvAccountName("");
+    setPaymentAccountId("");
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!csvAccountName || !paymentAccountId) {
+      toast({ title: "Please fill in all fields", variant: "destructive" });
+      return;
+    }
+
+    if (editingId) {
+      updateMutation.mutate({ id: editingId, data: { csvAccountName, paymentAccountId } });
+    } else {
+      createMutation.mutate({ csvAccountName, paymentAccountId });
+    }
+  };
+
+  const handleEdit = (mapping: AccountMapping) => {
+    setEditingId(mapping.id);
+    setCsvAccountName(mapping.csvAccountName);
+    setPaymentAccountId(mapping.paymentAccountId);
+    setOpen(true);
+  };
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
+        <div className="space-y-1">
+          <CardTitle>Account Mappings</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Map CSV bank account names to your payment accounts for automatic transaction matching
+          </p>
+        </div>
+        <Dialog open={open} onOpenChange={(isOpen) => { setOpen(isOpen); if (!isOpen) resetForm(); }}>
+          <DialogTrigger asChild>
+            <Button data-testid="button-add-mapping">
+              <Plus className="h-4 w-4 mr-2" />
+              Add Mapping
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{editingId ? "Edit" : "Add"} Account Mapping</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="csv-account-name">CSV Account Name</Label>
+                <Input
+                  id="csv-account-name"
+                  value={csvAccountName}
+                  onChange={(e) => setCsvAccountName(e.target.value)}
+                  placeholder="e.g., Chase Checking x1234"
+                  data-testid="input-csv-account-name"
+                  required
+                />
+                <p className="text-xs text-muted-foreground">
+                  The account name exactly as it appears in your CSV export
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="payment-account">Payment Account</Label>
+                <Select value={paymentAccountId} onValueChange={setPaymentAccountId} required>
+                  <SelectTrigger id="payment-account" data-testid="select-payment-account">
+                    <SelectValue placeholder="Select payment account" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {paymentAccounts.map((account) => (
+                      <SelectItem key={account.id} value={account.id}>
+                        {account.name} {account.lastFourDigits && `(${account.lastFourDigits})`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Your internal payment account to map this CSV account to
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <Button type="button" variant="outline" onClick={resetForm} className="flex-1">
+                  Cancel
+                </Button>
+                <Button type="submit" className="flex-1" data-testid="button-save-mapping" disabled={createMutation.isPending || updateMutation.isPending}>
+                  {editingId ? "Update" : "Add"} Mapping
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <p className="text-sm text-muted-foreground">Loading...</p>
+        ) : mappings.length === 0 ? (
+          <div className="text-center py-8 text-sm text-muted-foreground">
+            <p>No account mappings configured yet.</p>
+            <p className="mt-1">Add mappings to automatically match CSV transactions to your payment accounts.</p>
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>CSV Account Name</TableHead>
+                <TableHead>Mapped To</TableHead>
+                <TableHead className="w-24"></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {mappings.map((mapping) => {
+                const account = paymentAccounts.find((a) => a.id === mapping.paymentAccountId);
+                return (
+                  <TableRow key={mapping.id}>
+                    <TableCell data-testid={`text-csv-name-${mapping.id}`}>
+                      {mapping.csvAccountName}
+                    </TableCell>
+                    <TableCell data-testid={`text-mapped-account-${mapping.id}`}>
+                      {account ? (
+                        <>
+                          {account.name}
+                          {account.lastFourDigits && (
+                            <span className="text-muted-foreground ml-1">({account.lastFourDigits})</span>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-muted-foreground">Unknown Account</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-1">
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => handleEdit(mapping)}
+                          data-testid={`button-edit-mapping-${mapping.id}`}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => deleteMutation.mutate(mapping.id)}
+                          data-testid={`button-delete-mapping-${mapping.id}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         )}
