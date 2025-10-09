@@ -7,6 +7,7 @@ import AddPaymentDialog from "@/components/AddPaymentDialog";
 import EditPaymentDialog from "@/components/EditPaymentDialog";
 import RecordPaymentDialog from "@/components/RecordPaymentDialog";
 import PaymentHistoryTable from "@/components/PaymentHistoryTable";
+import { CSVImportDialog } from "@/components/CSVImportDialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -182,6 +183,7 @@ export default function Dashboard() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <CSVImportDialog />
             <Button asChild variant="secondary" data-testid="button-reports">
               <Link href="/reports">Reports</Link>
             </Button>
