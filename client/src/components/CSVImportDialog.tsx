@@ -21,6 +21,8 @@ import type { CSVTransaction, UniqueAccount } from "@/types/csvImport";
 import type { AccountMapping, PaymentAccount, PaymentSchedule, InternalCompany } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Separator } from "@/components/ui/separator";
 
 interface CSVImportDialogProps {
   trigger?: React.ReactNode;
@@ -43,6 +45,9 @@ export function CSVImportDialog({ trigger }: CSVImportDialogProps) {
   const [error, setError] = useState<string | null>(null);
   const [tempMappings, setTempMappings] = useState<Record<string, string>>({});
   const [reviewTransactions, setReviewTransactions] = useState<ReviewTransaction[]>([]);
+  const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
+  const [confidenceFilter, setConfidenceFilter] = useState<'all' | 'high' | 'medium' | 'low' | 'unmatched'>('all');
+  const [bulkCompanySelection, setBulkCompanySelection] = useState<string>("");
   const { toast } = useToast();
 
   const { data: accountMappings = [] } = useQuery<AccountMapping[]>({
@@ -122,6 +127,72 @@ export function CSVImportDialog({ trigger }: CSVImportDialogProps) {
       setError(err.message || 'Failed to process CSV file');
       setCsvData(null);
     }
+  };
+
+  useEffect(() => {
+    setSelectedRows(new Set());
+  }, [reviewTransactions, confidenceFilter]);
+
+  const toggleRowSelection = (rowIndex: number) => {
+    setSelectedRows(prev => {
+      const next = new Set(prev);
+      if (next.has(rowIndex)) {
+        next.delete(rowIndex);
+      } else {
+        next.add(rowIndex);
+      }
+      return next;
+    });
+  };
+
+  const filteredRows = useMemo(() => {
+    return reviewTransactions
+      .map((txn, index) => ({ txn, index }))
+      .filter(({ txn }) => {
+        const confidence = txn.matchConfidence;
+        switch (confidenceFilter) {
+          case 'high':
+            return !!confidence && confidence >= 85;
+          case 'medium':
+            return !!confidence && confidence >= 60 && confidence < 85;
+          case 'low':
+            return !!confidence && confidence < 60;
+          case 'unmatched':
+            return !confidence;
+          default:
+            return true;
+        }
+      });
+  }, [reviewTransactions, confidenceFilter]);
+
+  const headerCheckboxState = useMemo(() => {
+    if (filteredRows.length === 0) return false as const;
+    if (selectedRows.size === filteredRows.length) return true as const;
+    if (selectedRows.size === 0) return false as const;
+    return 'indeterminate' as const;
+  }, [filteredRows, selectedRows]);
+
+  const selectAllFiltered = () => {
+    setSelectedRows(new Set(filteredRows.map(({ index }) => index)));
+  };
+
+  const clearSelection = () => {
+    setSelectedRows(new Set());
+  };
+
+  const bulkSetAction = (action: ReviewTransaction['action']) => {
+    if (selectedRows.size === 0) return;
+    setReviewTransactions(prev =>
+      prev.map((txn, index) => (selectedRows.has(index) ? { ...txn, action } : txn)),
+    );
+  };
+
+  const bulkSetCompany = (companyId: string) => {
+    if (!companyId || selectedRows.size === 0) return;
+    setReviewTransactions(prev =>
+      prev.map((txn, index) => (selectedRows.has(index) ? { ...txn, internalCompanyId: companyId } : txn)),
+    );
+    setBulkCompanySelection("");
   };
 
   const handleFileClear = () => {
@@ -449,11 +520,87 @@ export function CSVImportDialog({ trigger }: CSVImportDialogProps) {
               <p className="text-sm text-muted-foreground">
                 Review and configure transactions before importing.
               </p>
-              
+
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button variant="outline" size="sm" onClick={selectAllFiltered} disabled={filteredRows.length === 0}>
+                    Select All ({filteredRows.length})
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={clearSelection} disabled={selectedRows.size === 0}>
+                    Clear Selection
+                  </Button>
+                  <Separator orientation="vertical" className="h-6 hidden md:block" />
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => bulkSetAction('record')}
+                    disabled={selectedRows.size === 0}
+                  >
+                    Set Record
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => bulkSetAction('skip')}
+                    disabled={selectedRows.size === 0}
+                  >
+                    Set Skip
+                  </Button>
+                  <Select
+                    value={bulkCompanySelection}
+                    onValueChange={(value) => {
+                      setBulkCompanySelection(value);
+                      bulkSetCompany(value);
+                    }}
+                    disabled={selectedRows.size === 0}
+                  >
+                    <SelectTrigger className="w-[200px] h-8 text-sm">
+                      <SelectValue placeholder="Bulk assign company" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {internalCompanies.map(company => (
+                        <SelectItem key={company.id} value={company.id}>
+                          {company.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Select value={confidenceFilter} onValueChange={value => setConfidenceFilter(value as typeof confidenceFilter)}>
+                  <SelectTrigger className="w-[220px] h-8 text-sm">
+                    <SelectValue placeholder="Filter by confidence" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All matches</SelectItem>
+                    <SelectItem value="high">High confidence (≥85%)</SelectItem>
+                    <SelectItem value="medium">Medium confidence (60-84%)</SelectItem>
+                    <SelectItem value="low">Low confidence (&lt;60%)</SelectItem>
+                    <SelectItem value="unmatched">Unmatched only</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="text-xs text-muted-foreground">
+                {selectedRows.size} selected · Showing {filteredRows.length} of {reviewTransactions.length}
+              </div>
+
               <div className="border rounded-lg overflow-hidden">
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-10 text-center">
+                        <Checkbox
+                          aria-label="Select all"
+                          checked={headerCheckboxState}
+                          onCheckedChange={(checked) => {
+                            if (checked === true || checked === 'indeterminate') {
+                              selectAllFiltered();
+                            } else {
+                              clearSelection();
+                            }
+                          }}
+                        />
+                      </TableHead>
                       <TableHead>Date</TableHead>
                       <TableHead>Vendor</TableHead>
                       <TableHead>Amount</TableHead>
@@ -464,15 +611,22 @@ export function CSVImportDialog({ trigger }: CSVImportDialogProps) {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {reviewTransactions.length === 0 ? (
+                    {filteredRows.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={7} className="text-center text-muted-foreground">
+                        <TableCell colSpan={8} className="text-center text-muted-foreground">
                           No transactions to review
                         </TableCell>
                       </TableRow>
                     ) : (
-                      reviewTransactions.map((txn, index) => (
-                        <TableRow key={index}>
+                      filteredRows.map(({ txn, index }) => (
+                        <TableRow key={index} className={selectedRows.has(index) ? "bg-muted/50" : undefined}>
+                          <TableCell className="text-center">
+                            <Checkbox
+                              checked={selectedRows.has(index)}
+                              onCheckedChange={() => toggleRowSelection(index)}
+                              aria-label={`Select transaction ${index + 1}`}
+                            />
+                          </TableCell>
                           <TableCell className="text-sm">{txn.date}</TableCell>
                           <TableCell className="text-sm font-medium">{txn.vendorName}</TableCell>
                           <TableCell className="text-sm font-mono">${txn.amount.toFixed(2)}</TableCell>
