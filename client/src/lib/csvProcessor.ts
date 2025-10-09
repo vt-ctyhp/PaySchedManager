@@ -165,9 +165,8 @@ export function applyFuzzyMatching(
 ): Array<CSVTransaction & { match?: FuzzyMatch }> {
   return transactions.map(transaction => {
     const match = findBestMatch(transaction.vendorName, paymentSchedules);
-    return {
-      ...transaction,
-      match
-    };
+    return match
+      ? { ...transaction, match }
+      : { ...transaction };
   });
 }

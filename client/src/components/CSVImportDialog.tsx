@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   Dialog,
@@ -55,17 +55,25 @@ export function CSVImportDialog({ trigger }: CSVImportDialogProps) {
     enabled: open,
   });
 
-  const { data: paymentSchedules = [] } = useQuery({
+  const { data: paymentSchedules = [] } = useQuery<PaymentSchedule[]>({
     queryKey: ["/api/payment-schedules"],
     enabled: open && step === 'review',
     refetchOnMount: true,
   });
 
-  const { data: internalCompanies = [] } = useQuery({
+  const { data: internalCompanies = [] } = useQuery<InternalCompany[]>({
     queryKey: ["/api/internal-companies"],
     enabled: open && step === 'review',
     refetchOnMount: true,
   });
+
+  const scheduleLookup = useMemo(() => {
+    const map = new Map<string, PaymentSchedule>();
+    (paymentSchedules as PaymentSchedule[]).forEach((schedule) => {
+      map.set(schedule.id, schedule);
+    });
+    return map;
+  }, [paymentSchedules]);
 
   // Debug: Log payment accounts when they change
   useEffect(() => {
@@ -199,19 +207,31 @@ export function CSVImportDialog({ trigger }: CSVImportDialogProps) {
 
       // Create payment records
       for (const txn of toImport) {
-        await fetch("/api/payment-records", {
+        const matchedSchedule = txn.matchedScheduleId ? scheduleLookup.get(txn.matchedScheduleId) : undefined;
+        const paymentDateIso = txn.date
+          ? new Date(`${txn.date}T00:00:00Z`).toISOString()
+          : new Date().toISOString();
+
+        const formData = new FormData();
+        formData.append("paymentScheduleId", matchedSchedule?.id ?? "");
+        formData.append(
+          "expenseId",
+          matchedSchedule?.expenseId ?? `CSV-${txn.vendorName}-${txn.date}`
+        );
+        formData.append("paymentDate", paymentDateIso);
+        formData.append("amount", txn.amount.toFixed(2));
+        formData.append("paymentMethod", "other");
+        formData.append("paymentAccountId", txn.paymentAccountId || "");
+        const response = await fetch("/api/payment-records", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            date: txn.date,
-            amount: txn.amount,
-            vendor: txn.vendorName,
-            internalCompanyId: txn.internalCompanyId,
-            paymentAccountId: txn.paymentAccountId,
-            paymentScheduleId: txn.matchedScheduleId || null,
-            confirmationNumber: null,
-          }),
+          body: formData,
+          credentials: "include",
         });
+
+        if (!response.ok) {
+          const { message } = await response.json().catch(() => ({ message: response.statusText }));
+          throw new Error(`Failed to import transaction for ${txn.vendorName}: ${message}`);
+        }
       }
 
       // Invalidate payment records query to refresh the list
