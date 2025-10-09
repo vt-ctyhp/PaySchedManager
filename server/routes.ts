@@ -482,6 +482,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/payment-records/bulk", requireAuth, async (req, res) => {
+    try {
+      if (!Array.isArray(req.body) || req.body.length === 0) {
+        return res.status(400).json({ message: "Request body must be a non-empty array" });
+      }
+
+      const parsedRecords = req.body.map((rawRecord) =>
+        insertPaymentRecordSchema.parse({
+          ...rawRecord,
+          paymentScheduleId: rawRecord.paymentScheduleId || null,
+          approvedBy: rawRecord.approvedBy || null,
+          paymentAccountId: rawRecord.paymentAccountId || null,
+        })
+      );
+
+      const createdRecords = await Promise.all(
+        parsedRecords.map((record) =>
+          storage.createPaymentRecord({
+            ...record,
+            paidBy: req.session.userId!,
+          })
+        )
+      );
+
+      res.status(201).json(createdRecords);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message || "Invalid data" });
+    }
+  });
+
   app.put("/api/payment-records/:id", requireAuth, async (req, res) => {
     try {
       const data = insertPaymentRecordSchema.partial().parse(req.body);

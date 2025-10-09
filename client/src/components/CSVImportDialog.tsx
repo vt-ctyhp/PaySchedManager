@@ -276,33 +276,33 @@ export function CSVImportDialog({ trigger }: CSVImportDialogProps) {
         return;
       }
 
-      // Create payment records
-      for (const txn of toImport) {
+      const bulkPayload = toImport.map((txn) => {
         const matchedSchedule = txn.matchedScheduleId ? scheduleLookup.get(txn.matchedScheduleId) : undefined;
         const paymentDateIso = txn.date
           ? new Date(`${txn.date}T00:00:00Z`).toISOString()
           : new Date().toISOString();
 
-        const formData = new FormData();
-        formData.append("paymentScheduleId", matchedSchedule?.id ?? "");
-        formData.append(
-          "expenseId",
-          matchedSchedule?.expenseId ?? `CSV-${txn.vendorName}-${txn.date}`
-        );
-        formData.append("paymentDate", paymentDateIso);
-        formData.append("amount", txn.amount.toFixed(2));
-        formData.append("paymentMethod", "other");
-        formData.append("paymentAccountId", txn.paymentAccountId || "");
-        const response = await fetch("/api/payment-records", {
-          method: "POST",
-          body: formData,
-          credentials: "include",
-        });
+        return {
+          paymentScheduleId: matchedSchedule?.id ?? null,
+          expenseId: matchedSchedule?.expenseId ?? `CSV-${txn.vendorName}-${txn.date}`,
+          paymentDate: paymentDateIso,
+          amount: txn.amount.toFixed(2),
+          paymentMethod: "other",
+          paymentAccountId: txn.paymentAccountId ?? null,
+          approvedBy: null,
+        };
+      });
 
-        if (!response.ok) {
-          const { message } = await response.json().catch(() => ({ message: response.statusText }));
-          throw new Error(`Failed to import transaction for ${txn.vendorName}: ${message}`);
-        }
+      const response = await fetch("/api/payment-records/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(bulkPayload),
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        const { message } = await response.json().catch(() => ({ message: response.statusText }));
+        throw new Error(message || "Failed to import transactions");
       }
 
       // Invalidate payment records query to refresh the list
