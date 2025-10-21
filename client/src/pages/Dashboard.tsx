@@ -37,6 +37,8 @@ import type {
 } from "@shared/schema";
 import { differenceInDays, format } from "date-fns";
 
+const MS_PER_DAY = 1000 * 60 * 60 * 24;
+
 export default function Dashboard() {
   const { user, logout } = useAuth();
   const { toast } = useToast();
@@ -164,15 +166,28 @@ export default function Dashboard() {
             ? companyLabel
             : `${companyLabel} · ${vendorLabel}`)
         : vendorLabel || "Unknown";
+      const paymentDate = new Date(record.paymentDate);
       const scheduledDueDate = record.scheduledDueDate
         ? new Date(record.scheduledDueDate)
         : schedule
         ? new Date(schedule.nextDueDate)
         : undefined;
+      const storedDaysLate = Number(record.daysLate ?? 0);
+      const computedDaysLate =
+        scheduledDueDate && paymentDate
+          ? Math.max(
+              0,
+              Math.ceil(
+                (paymentDate.getTime() - scheduledDueDate.getTime()) / MS_PER_DAY,
+              ),
+            )
+          : 0;
+      const normalizedDaysLate =
+        storedDaysLate > 0 ? storedDaysLate : computedDaysLate;
       
       return {
         id: record.id,
-        date: new Date(record.paymentDate),
+        date: paymentDate,
         company: displayName,
         amount: parseFloat(record.amount),
         payer: payer?.username || "Unknown",
@@ -180,7 +195,7 @@ export default function Dashboard() {
         account: account ? `${account.name}${account.lastFourDigits ? ` (*${account.lastFourDigits})` : ''}` : undefined,
         hasConfirmation: !!record.confirmationFile,
         confirmationFile: record.confirmationFile,
-        daysLate: Number(record.daysLate ?? 0),
+        daysLate: normalizedDaysLate,
         scheduledDueDate,
       };
     });
