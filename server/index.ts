@@ -1,6 +1,7 @@
 import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
 import MemoryStore from "memorystore";
+import connectPgSimple from "connect-pg-simple";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { storage } from "./storage";
@@ -9,18 +10,30 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
+if (process.env.NODE_ENV === "production") {
+  app.set("trust proxy", 1);
+}
+
+const usePgSessions = Boolean(process.env.DATABASE_URL);
 const MemoryStoreSession = MemoryStore(session);
+const PgSession = connectPgSimple(session);
 
 app.use(
   session({
     secret: process.env.SESSION_SECRET || "dev-secret-change-in-production",
     resave: false,
     saveUninitialized: false,
-    store: new MemoryStoreSession({
-      checkPeriod: 86400000, // prune expired entries every 24h
-    }),
+    store: usePgSessions
+      ? new PgSession({
+          conObject: {
+            connectionString: process.env.DATABASE_URL!,
+            ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : undefined,
+          },
+          createTableIfMissing: true,
+        })
+      : new MemoryStoreSession({ checkPeriod: 86400000 }),
     cookie: {
-      maxAge: 1000 * 60 * 60 * 24 * 7, // 1 week
+      maxAge: 1000 * 60 * 60 * 24 * 7,
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",

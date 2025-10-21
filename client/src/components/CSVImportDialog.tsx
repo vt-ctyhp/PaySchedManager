@@ -55,7 +55,7 @@ export function CSVImportDialog({ trigger }: CSVImportDialogProps) {
     enabled: open,
   });
 
-  const { data: paymentAccounts = [], isLoading: isLoadingAccounts, error: accountsError } = useQuery<PaymentAccount[]>({
+  const { data: paymentAccounts = [], isLoading: isLoadingAccounts } = useQuery<PaymentAccount[]>({
     queryKey: ["/api/payment-accounts"],
     enabled: open,
   });
@@ -79,21 +79,6 @@ export function CSVImportDialog({ trigger }: CSVImportDialogProps) {
     });
     return map;
   }, [paymentSchedules]);
-
-  // Debug: Log payment accounts when they change
-  useEffect(() => {
-    console.log('Payment accounts query state:', {
-      loading: isLoadingAccounts,
-      count: paymentAccounts.length,
-      error: accountsError,
-      open
-    });
-    if (paymentAccounts.length > 0) {
-      console.log('Payment accounts loaded:', paymentAccounts);
-    } else if (!isLoadingAccounts && open && paymentAccounts.length === 0) {
-      console.log('No payment accounts found - query completed but empty result');
-    }
-  }, [paymentAccounts, isLoadingAccounts, open, accountsError]);
 
   const createMappingMutation = useMutation({
     mutationFn: async (mapping: { csvAccountName: string; paymentAccountId: string }) => {
@@ -285,11 +270,14 @@ export function CSVImportDialog({ trigger }: CSVImportDialogProps) {
         return {
           paymentScheduleId: matchedSchedule?.id ?? null,
           expenseId: matchedSchedule?.expenseId ?? `CSV-${txn.vendorName}-${txn.date}`,
+          internalCompanyId: txn.internalCompanyId ?? matchedSchedule?.internalCompanyId ?? null,
           paymentDate: paymentDateIso,
           amount: txn.amount.toFixed(2),
           paymentMethod: "other",
           paymentAccountId: txn.paymentAccountId ?? null,
           approvedBy: null,
+          confirmationFile: null,
+          approvalScreenshot: null,
         };
       });
 
@@ -338,7 +326,7 @@ export function CSVImportDialog({ trigger }: CSVImportDialogProps) {
         paymentAccountId: mapping?.paymentAccountId,
         matchedScheduleId: match?.schedule.id,
         matchConfidence: match?.similarity,
-        internalCompanyId: match?.schedule.internalCompanyId, // Pre-fill from matched schedule
+        internalCompanyId: match?.schedule.internalCompanyId ?? txn.selectedInternalCompanyId,
         action: 'record' as const,
       };
     });

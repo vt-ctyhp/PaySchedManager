@@ -93,6 +93,7 @@ export const paymentRecords = pgTable("payment_records", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   paymentScheduleId: varchar("payment_schedule_id"),
   expenseId: text("expense_id").notNull(),
+  internalCompanyId: varchar("internal_company_id").notNull(),
   paymentDate: timestamp("payment_date").notNull(),
   amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
   paidBy: varchar("paid_by").notNull(), // User ID who made the payment (auto-filled from session)
@@ -100,6 +101,7 @@ export const paymentRecords = pgTable("payment_records", {
   paymentMethod: text("payment_method").notNull(),
   paymentAccountId: varchar("payment_account_id"), // Foreign key to payment accounts
   confirmationFile: text("confirmation_file"),
+  approvalScreenshot: text("approval_screenshot"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -111,6 +113,8 @@ export const insertPaymentRecordSchema = createInsertSchema(paymentRecords)
   })
   .extend({
     paymentDate: z.coerce.date(),
+    confirmationFile: z.string().nullable().optional(),
+    approvalScreenshot: z.string().nullable().optional(),
   });
 
 export type InsertPaymentRecord = z.infer<typeof insertPaymentRecordSchema>;

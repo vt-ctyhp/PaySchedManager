@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { DollarSign, Calendar, Clock, AlertCircle, Settings as SettingsIcon } from "lucide-react";
+import { DollarSign, Calendar, Clock, AlertCircle, LogOut, Settings as SettingsIcon } from "lucide-react";
 import QuickStatsCard from "@/components/QuickStatsCard";
 import PaymentScheduleCard from "@/components/PaymentScheduleCard";
 import AddPaymentDialog from "@/components/AddPaymentDialog";
@@ -38,7 +38,7 @@ import type {
 import { differenceInDays, format } from "date-fns";
 
 export default function Dashboard() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("all");
@@ -105,6 +105,9 @@ export default function Dashboard() {
 
   // Determine payment status
   const getPaymentStatus = (schedule: PaymentSchedule): "paid" | "due-soon" | "overdue" | "scheduled" => {
+    if (schedule.status === "completed") {
+      return "paid";
+    }
     const dueDate = new Date(schedule.nextDueDate);
     const today = new Date();
     const daysUntil = differenceInDays(dueDate, today);
@@ -146,11 +149,26 @@ export default function Dashboard() {
     return records.map(record => {
       const payer = getUserById(record.paidBy);
       const account = record.paymentAccountId ? getAccountById(record.paymentAccountId) : undefined;
+      const schedule = record.paymentScheduleId
+        ? schedules.find(s => s.id === record.paymentScheduleId)
+        : schedules.find(s => s.expenseId === record.expenseId);
+      const company = record.internalCompanyId
+        ? getCompanyById(record.internalCompanyId)
+        : schedule
+        ? getCompanyById(schedule.internalCompanyId)
+        : undefined;
+      const companyLabel = company?.name;
+      const vendorLabel = schedule?.vendorName || record.expenseId;
+      const displayName = companyLabel
+        ? (companyLabel.includes(vendorLabel) || companyLabel === vendorLabel
+            ? companyLabel
+            : `${companyLabel} · ${vendorLabel}`)
+        : vendorLabel || "Unknown";
       
       return {
         id: record.id,
         date: new Date(record.paymentDate),
-        company: schedules.find(s => s.expenseId === record.expenseId)?.vendorName || "Unknown",
+        company: displayName,
         amount: parseFloat(record.amount),
         payer: payer?.username || "Unknown",
         method: record.paymentMethod,
@@ -159,7 +177,7 @@ export default function Dashboard() {
         confirmationFile: record.confirmationFile,
       };
     });
-  }, [records, schedules, users, paymentAccounts]);
+  }, [records, schedules, users, paymentAccounts, companies]);
 
   // Stats calculations
   const totalScheduled = enrichedSchedules.reduce((sum, s) => sum + parseFloat(s.amount), 0);
@@ -170,6 +188,19 @@ export default function Dashboard() {
     const now = new Date();
     return recordDate.getMonth() === now.getMonth() && recordDate.getFullYear() === now.getFullYear();
   }).length;
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      toast({ title: "Signed out" });
+    } catch (error: any) {
+      toast({
+        title: "Failed to log out",
+        description: error?.message || "Please try again",
+        variant: "destructive",
+      });
+    }
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -191,6 +222,15 @@ export default function Dashboard() {
               <Link href="/settings">
                 <SettingsIcon className="h-4 w-4" />
               </Link>
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={handleLogout}
+              data-testid="button-logout"
+              title="Log out"
+            >
+              <LogOut className="h-4 w-4" />
             </Button>
             <AddPaymentDialog />
           </div>

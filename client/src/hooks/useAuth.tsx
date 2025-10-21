@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 
 interface User {
   id: string;
@@ -47,17 +47,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (username: string, password: string) => {
     const response = await apiRequest("POST", "/api/auth/login", { username, password });
     const userData = await response.json();
+    queryClient.clear();
     setUser(userData);
   };
 
   const logout = async () => {
     await apiRequest("POST", "/api/auth/logout");
+    queryClient.clear();
     setUser(null);
   };
 
   const register = async (username: string, password: string, role: string = "User") => {
     const response = await apiRequest("POST", "/api/auth/register", { username, password, role });
     const userData = await response.json();
+    queryClient.clear();
     setUser(userData);
   };
 

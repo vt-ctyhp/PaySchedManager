@@ -96,6 +96,9 @@ export default function RecordPaymentDialog({
     const formData = new FormData();
     formData.append("paymentScheduleId", scheduleId || selectedSchedule?.id || "");
     formData.append("expenseId", selectedExpenseId);
+    if (selectedSchedule) {
+      formData.append("internalCompanyId", selectedSchedule.internalCompanyId);
+    }
     formData.append("paymentDate", paymentDate.toISOString());
     formData.append("amount", amount);
     formData.append("approvedBy", approvedBy || "");

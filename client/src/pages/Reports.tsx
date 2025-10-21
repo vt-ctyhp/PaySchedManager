@@ -101,6 +101,9 @@ export default function Reports() {
     }>();
 
     schedules.forEach((schedule) => {
+      if (schedule.status === "completed") {
+        return;
+      }
       const dueDate = new Date(schedule.nextDueDate);
       if (dueDate < now || dueDate > timeframeEnd) {
         return;
@@ -149,6 +152,9 @@ export default function Reports() {
     }> = [];
 
     schedules.forEach((schedule) => {
+      if (schedule.status === "completed") {
+        return;
+      }
       const company = companyLookup.get(schedule.internalCompanyId);
       const dueDate = new Date(schedule.nextDueDate);
       const scheduleAmount = Number.parseFloat(schedule.amount);

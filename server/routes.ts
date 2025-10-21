@@ -13,8 +13,7 @@ import {
   insertAccountMappingSchema,
 } from "@shared/schema";
 import { hashPassword, authenticateUser, requireAuth, requireAdmin, getCurrentUser } from "./auth";
-import { upload } from "./upload";
-import path from "path";
+import { upload, persistUploadedFile, getFileStream } from "./upload";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Authentication routes
@@ -458,29 +457,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/payment-records", requireAuth, upload.single("confirmationFile"), async (req, res) => {
-    try {
-      // Parse and validate the multipart form data
-      const data = insertPaymentRecordSchema.parse({
-        paymentScheduleId: req.body.paymentScheduleId || null,
-        expenseId: req.body.expenseId,
-        paymentDate: req.body.paymentDate,
-        amount: req.body.amount,
-        approvedBy: req.body.approvedBy || null,
-        paymentMethod: req.body.paymentMethod,
-        paymentAccountId: req.body.paymentAccountId || null,
-      });
-      
-      const record = await storage.createPaymentRecord({
-        ...data,
-        paidBy: req.session.userId!,
-        confirmationFile: req.file?.filename || null,
-      });
-      res.status(201).json(record);
-    } catch (error) {
-      res.status(400).json({ message: "Invalid data" });
+  app.post(
+    "/api/payment-records",
+    requireAuth,
+    upload.fields([
+      { name: "confirmationFile", maxCount: 1 },
+      { name: "approvalScreenshot", maxCount: 1 },
+    ]),
+    async (req, res) => {
+      try {
+        const files = req.files as Record<string, Express.Multer.File[]> | undefined;
+        const confirmationKey = await persistUploadedFile(files?.confirmationFile?.[0]);
+        const approvalKey = await persistUploadedFile(files?.approvalScreenshot?.[0]);
+        const scheduleId = req.body.paymentScheduleId || null;
+        const schedule = scheduleId ? await storage.getPaymentSchedule(scheduleId) : null;
+        const internalCompanyId = req.body.internalCompanyId || schedule?.internalCompanyId;
+        const expenseId = schedule?.expenseId ?? req.body.expenseId;
+
+        if (!internalCompanyId) {
+          throw new Error("Internal company is required");
+        }
+
+        if (!expenseId) {
+          throw new Error("Expense ID is required");
+        }
+
+        const data = insertPaymentRecordSchema.parse({
+          paymentScheduleId: scheduleId,
+          expenseId,
+          internalCompanyId,
+          paymentDate: req.body.paymentDate,
+          amount: req.body.amount,
+          approvedBy: req.body.approvedBy || null,
+          paymentMethod: req.body.paymentMethod,
+          paymentAccountId: req.body.paymentAccountId || null,
+          confirmationFile: confirmationKey ?? null,
+          approvalScreenshot: approvalKey ?? null,
+        });
+
+        const record = await storage.createPaymentRecord({
+          ...data,
+          paidBy: req.session.userId!,
+          confirmationFile: confirmationKey ?? null,
+          approvalScreenshot: approvalKey ?? null,
+        });
+        res.status(201).json(record);
+      } catch (error: any) {
+        res.status(400).json({ message: error.message || "Invalid data" });
+      }
     }
-  });
+  );
 
   app.post("/api/payment-records/bulk", requireAuth, async (req, res) => {
     try {
@@ -488,12 +514,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Request body must be a non-empty array" });
       }
 
-      const parsedRecords = req.body.map((rawRecord) =>
-        insertPaymentRecordSchema.parse({
-          ...rawRecord,
-          paymentScheduleId: rawRecord.paymentScheduleId || null,
-          approvedBy: rawRecord.approvedBy || null,
-          paymentAccountId: rawRecord.paymentAccountId || null,
+      const parsedRecords = await Promise.all(
+        req.body.map(async (rawRecord: any) => {
+          const scheduleId = rawRecord.paymentScheduleId || null;
+          const schedule = scheduleId ? await storage.getPaymentSchedule(scheduleId) : null;
+          const internalCompanyId = rawRecord.internalCompanyId || schedule?.internalCompanyId;
+          const expenseId = schedule?.expenseId ?? rawRecord.expenseId;
+
+          if (!internalCompanyId) {
+            throw new Error("Internal company is required for imported payments");
+          }
+
+          if (!expenseId) {
+            throw new Error("Expense ID is required for imported payments");
+          }
+
+          return insertPaymentRecordSchema.parse({
+            ...rawRecord,
+            paymentScheduleId: scheduleId,
+            expenseId,
+            internalCompanyId,
+            approvedBy: rawRecord.approvedBy || null,
+            paymentAccountId: rawRecord.paymentAccountId || null,
+            confirmationFile: rawRecord.confirmationFile ?? null,
+            approvalScreenshot: rawRecord.approvalScreenshot ?? null,
+          });
         })
       );
 
@@ -538,31 +583,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // File download endpoint
-  app.get("/api/files/:filename", requireAuth, (req, res) => {
+  app.get("/api/files/:key", requireAuth, async (req, res) => {
     try {
-      const filename = req.params.filename;
-      
-      // Prevent directory traversal attacks
-      if (filename.includes("..") || filename.includes("/") || filename.includes("\\")) {
-        return res.status(400).json({ message: "Invalid filename" });
+      const file = await getFileStream(req.params.key);
+
+      if (!file) {
+        return res.status(404).json({ message: "File not found" });
       }
-      
-      const uploadsDir = path.join(process.cwd(), "uploads");
-      const filepath = path.join(uploadsDir, filename);
-      
-      // Verify the resolved path is within the uploads directory
-      const resolvedPath = path.resolve(filepath);
-      const resolvedUploadsDir = path.resolve(uploadsDir);
-      
-      if (!resolvedPath.startsWith(resolvedUploadsDir)) {
-        return res.status(400).json({ message: "Invalid file path" });
+
+      const fileName = file.originalName || req.params.key;
+      if (file.contentType) {
+        res.setHeader("Content-Type", file.contentType);
       }
-      
-      res.download(filepath, (err) => {
-        if (err) {
-          res.status(404).json({ message: "File not found" });
-        }
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`
+      );
+      if (file.contentLength) {
+        res.setHeader("Content-Length", file.contentLength.toString());
+      }
+
+      file.stream.on("error", () => {
+        res.status(500).end();
       });
+
+      file.stream.pipe(res);
     } catch (error) {
       res.status(500).json({ message: "Failed to download file" });
     }

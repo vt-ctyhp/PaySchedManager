@@ -1,4 +1,27 @@
+import { randomUUID } from "crypto";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { Pool } from "pg";
 import {
+  eq,
+  like,
+} from "drizzle-orm";
+import {
+  users,
+  internalCompanies,
+  paymentAccounts,
+  paymentTypes,
+  expenseTypes,
+  paymentSchedules,
+  paymentRecords,
+  accountMappings,
+  insertUserSchema,
+  insertInternalCompanySchema,
+  insertPaymentAccountSchema,
+  insertPaymentTypeSchema,
+  insertExpenseTypeSchema,
+  insertPaymentScheduleSchema,
+  insertPaymentRecordSchema,
+  insertAccountMappingSchema,
   type User,
   type InsertUser,
   type InternalCompany,
@@ -16,9 +39,73 @@ import {
   type AccountMapping,
   type InsertAccountMapping,
 } from "@shared/schema";
-import { randomUUID } from "crypto";
+import * as schema from "@shared/schema";
+
+type ScheduleFrequency = PaymentSchedule["frequency"];
+
+function addFrequencyInterval(date: Date, frequency: ScheduleFrequency): Date | null {
+  const next = new Date(date.getTime());
+
+  switch (frequency) {
+    case "one-time":
+      return null;
+    case "bi-weekly":
+      next.setDate(next.getDate() + 14);
+      return next;
+    case "monthly":
+      next.setMonth(next.getMonth() + 1);
+      return next;
+    case "quarterly":
+      next.setMonth(next.getMonth() + 3);
+      return next;
+    case "yearly":
+      next.setFullYear(next.getFullYear() + 1);
+      return next;
+    default:
+      return null;
+  }
+}
+
+function deriveScheduleUpdate(
+  schedule: PaymentSchedule,
+  paymentDate: Date,
+): Pick<PaymentSchedule, "nextDueDate" | "status"> | { status: "completed" } | null {
+  if (!schedule.frequency) {
+    return null;
+  }
+
+  if (schedule.frequency === "one-time") {
+    return { status: "completed" };
+  }
+
+  const currentDue = new Date(schedule.nextDueDate);
+  if (Number.isNaN(currentDue.getTime())) {
+    return null;
+  }
+
+  let nextDue = new Date(currentDue.getTime());
+  let iterations = 0;
+  while (nextDue <= paymentDate) {
+    const candidate = addFrequencyInterval(nextDue, schedule.frequency);
+    if (!candidate) {
+      return { status: "completed" };
+    }
+    nextDue = candidate;
+    iterations += 1;
+    if (iterations > 24) {
+      break;
+    }
+  }
+
+  return {
+    nextDueDate: nextDue,
+    status: "scheduled",
+  };
+}
 
 export interface IStorage {
+  initialize(): Promise<void>;
+
   // Users
   getAllUsers(): Promise<User[]>;
   getUser(id: string): Promise<User | undefined>;
@@ -68,8 +155,20 @@ export interface IStorage {
   getAllPaymentRecords(): Promise<PaymentRecord[]>;
   getPaymentRecord(id: string): Promise<PaymentRecord | undefined>;
   getPaymentRecordsByScheduleId(scheduleId: string): Promise<PaymentRecord[]>;
-  createPaymentRecord(record: InsertPaymentRecord): Promise<PaymentRecord>;
-  updatePaymentRecord(id: string, record: Partial<InsertPaymentRecord>): Promise<PaymentRecord | undefined>;
+  createPaymentRecord(
+    record: InsertPaymentRecord & {
+      paidBy: string;
+      confirmationFile?: string | null;
+      approvalScreenshot?: string | null;
+    }
+  ): Promise<PaymentRecord>;
+  updatePaymentRecord(
+    id: string,
+    record: Partial<InsertPaymentRecord> & {
+      confirmationFile?: string | null;
+      approvalScreenshot?: string | null;
+    }
+  ): Promise<PaymentRecord | undefined>;
   deletePaymentRecord(id: string): Promise<boolean>;
 
   // Account Mappings
@@ -107,48 +206,50 @@ export class MemStorage implements IStorage {
   }
 
   private async initializeDefaults() {
-    // Import hashPassword for default admin user
     const bcrypt = await import("bcrypt");
     const SALT_ROUNDS = 10;
-    
-    // Default Admin User (password: admin123)
-    const adminId = randomUUID();
-    const hashedPassword = await bcrypt.hash("admin123", SALT_ROUNDS);
-    this.users.set(adminId, {
-      id: adminId,
-      username: "admin",
-      password: hashedPassword,
-      role: "Admin",
-      createdAt: new Date(),
-    });
 
-    // Default Internal Companies
-    const companies = [
-      { name: "Trans Fine Jewelry", abbreviation: "TFJ" },
-      { name: "Alexander DM", abbreviation: "ADM" },
-      { name: "Hung Phat LLC", abbreviation: "HP LLC" },
-    ];
-    companies.forEach((c) => {
-      const id = randomUUID();
-      this.internalCompanies.set(id, { id, ...c });
-    });
+    if (!Array.from(this.users.values()).some((user) => user.username === "admin")) {
+      const adminId = randomUUID();
+      const hashedPassword = await bcrypt.hash("admin123", SALT_ROUNDS);
+      this.users.set(adminId, {
+        id: adminId,
+        username: "admin",
+        password: hashedPassword,
+        role: "Admin",
+        createdAt: new Date(),
+      });
+    }
 
-    // Default Payment Types
-    const paymentTypesData = ["ACH", "Wire", "Credit Card", "Debit Card"];
-    paymentTypesData.forEach((name) => {
-      const id = randomUUID();
-      this.paymentTypes.set(id, { id, name });
-    });
+    if (this.internalCompanies.size === 0) {
+      const companies = [
+        { name: "Trans Fine Jewelry", abbreviation: "TFJ" },
+        { name: "Alexander DM", abbreviation: "ADM" },
+        { name: "Hung Phat LLC", abbreviation: "HP LLC" },
+      ];
+      companies.forEach((c) => {
+        const id = randomUUID();
+        this.internalCompanies.set(id, { id, ...c });
+      });
+    }
 
-    // Default Expense Types
-    const expenseTypesData = ["Insurance", "Rent", "Professional Services", "Shipping", "Subscriptions"];
-    expenseTypesData.forEach((name) => {
-      const id = randomUUID();
-      this.expenseTypes.set(id, { id, name });
-    });
+    if (this.paymentTypes.size === 0) {
+      const paymentTypesData = ["ACH", "Wire", "Credit Card", "Debit Card"];
+      paymentTypesData.forEach((name) => {
+        const id = randomUUID();
+        this.paymentTypes.set(id, { id, name });
+      });
+    }
+
+    if (this.expenseTypes.size === 0) {
+      const expenseTypesData = ["Insurance", "Rent", "Professional Services", "Shipping", "Subscriptions"];
+      expenseTypesData.forEach((name) => {
+        const id = randomUUID();
+        this.expenseTypes.set(id, { id, name });
+      });
+    }
   }
 
-  // Users
   async getAllUsers(): Promise<User[]> {
     return Array.from(this.users.values());
   }
@@ -163,9 +264,9 @@ export class MemStorage implements IStorage {
 
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = randomUUID();
-    const user: User = { 
-      ...insertUser, 
-      id, 
+    const user: User = {
+      ...insertUser,
+      id,
       role: insertUser.role || "User",
       createdAt: new Date(),
     };
@@ -185,7 +286,6 @@ export class MemStorage implements IStorage {
     return this.users.delete(id);
   }
 
-  // Internal Companies
   async getAllInternalCompanies(): Promise<InternalCompany[]> {
     return Array.from(this.internalCompanies.values());
   }
@@ -213,7 +313,6 @@ export class MemStorage implements IStorage {
     return this.internalCompanies.delete(id);
   }
 
-  // Payment Accounts
   async getAllPaymentAccounts(): Promise<PaymentAccount[]> {
     return Array.from(this.paymentAccounts.values());
   }
@@ -224,8 +323,8 @@ export class MemStorage implements IStorage {
 
   async createPaymentAccount(account: InsertPaymentAccount): Promise<PaymentAccount> {
     const id = randomUUID();
-    const newAccount: PaymentAccount = { 
-      id, 
+    const newAccount: PaymentAccount = {
+      id,
       ...account,
       lastFourDigits: account.lastFourDigits ?? null,
     };
@@ -245,7 +344,6 @@ export class MemStorage implements IStorage {
     return this.paymentAccounts.delete(id);
   }
 
-  // Payment Types
   async getAllPaymentTypes(): Promise<PaymentType[]> {
     return Array.from(this.paymentTypes.values());
   }
@@ -273,7 +371,6 @@ export class MemStorage implements IStorage {
     return this.paymentTypes.delete(id);
   }
 
-  // Expense Types
   async getAllExpenseTypes(): Promise<ExpenseType[]> {
     return Array.from(this.expenseTypes.values());
   }
@@ -301,7 +398,6 @@ export class MemStorage implements IStorage {
     return this.expenseTypes.delete(id);
   }
 
-  // Payment Schedules
   async getAllPaymentSchedules(): Promise<PaymentSchedule[]> {
     return Array.from(this.paymentSchedules.values());
   }
@@ -318,27 +414,20 @@ export class MemStorage implements IStorage {
 
   async getNextSequenceNumber(internalCompanyAbbr: string, vendorAbbr: string): Promise<number> {
     const prefix = `${internalCompanyAbbr}-${vendorAbbr}`;
-    const suffixes = Array.from(this.paymentSchedules.values())
-      .filter((schedule) => schedule.expenseId.startsWith(prefix))
-      .map((schedule) => {
-        const parts = schedule.expenseId.split("-");
-        return Number.parseInt(parts.at(-1) || "0", 10) || 0;
-      });
-
-    const currentMax = suffixes.length > 0 ? Math.max(...suffixes) : 0;
-    return currentMax + 1;
+    const existing = Array.from(this.paymentSchedules.values()).filter(
+      (schedule) => schedule.expenseId.startsWith(prefix)
+    );
+    return existing.length + 1;
   }
 
   async createPaymentSchedule(schedule: InsertPaymentSchedule): Promise<PaymentSchedule> {
     const id = randomUUID();
-    
-    // Get internal company for abbreviation
+
     const internalCompany = await this.getInternalCompany(schedule.internalCompanyId);
     if (!internalCompany) {
       throw new Error("Internal company not found");
     }
 
-    // Generate expense ID
     const sequenceNumber = await this.getNextSequenceNumber(
       internalCompany.abbreviation,
       schedule.vendorAbbreviation
@@ -368,7 +457,6 @@ export class MemStorage implements IStorage {
     return this.paymentSchedules.delete(id);
   }
 
-  // Payment Records
   async getAllPaymentRecords(): Promise<PaymentRecord[]> {
     return Array.from(this.paymentRecords.values());
   }
@@ -385,16 +473,38 @@ export class MemStorage implements IStorage {
 
   async createPaymentRecord(record: InsertPaymentRecord & { paidBy: string }): Promise<PaymentRecord> {
     const id = randomUUID();
+    const schedule = record.paymentScheduleId ? this.paymentSchedules.get(record.paymentScheduleId) : undefined;
+    const resolvedInternalCompanyId = record.internalCompanyId ?? schedule?.internalCompanyId;
+
+    if (!resolvedInternalCompanyId) {
+      throw new Error("Internal company is required for payment records");
+    }
+
     const newRecord: PaymentRecord = {
       id,
       createdAt: new Date(),
       ...record,
       paymentScheduleId: record.paymentScheduleId ?? null,
+      internalCompanyId: resolvedInternalCompanyId,
       approvedBy: record.approvedBy ?? null,
       paymentAccountId: record.paymentAccountId ?? null,
       confirmationFile: record.confirmationFile ?? null,
+      approvalScreenshot: record.approvalScreenshot ?? null,
     };
     this.paymentRecords.set(id, newRecord);
+
+    if (schedule) {
+      const paymentDate = new Date(record.paymentDate);
+      const update = deriveScheduleUpdate(schedule, paymentDate);
+      if (update) {
+        const updatedSchedule: PaymentSchedule = {
+          ...schedule,
+          ...update,
+        };
+        this.paymentSchedules.set(schedule.id, updatedSchedule);
+      }
+    }
+
     return newRecord;
   }
 
@@ -410,7 +520,6 @@ export class MemStorage implements IStorage {
     return this.paymentRecords.delete(id);
   }
 
-  // Account Mappings
   async getAllAccountMappings(): Promise<AccountMapping[]> {
     return Array.from(this.accountMappings.values());
   }
@@ -421,19 +530,23 @@ export class MemStorage implements IStorage {
 
   async getAccountMappingByCsvName(csvAccountName: string): Promise<AccountMapping | undefined> {
     return Array.from(this.accountMappings.values()).find(
-      (mapping) => mapping.csvAccountName === csvAccountName
+      (mapping) => mapping.csvAccountName.toLowerCase() === csvAccountName.toLowerCase()
     );
   }
 
-  async createAccountMapping(insertMapping: InsertAccountMapping): Promise<AccountMapping> {
+  async createAccountMapping(mapping: InsertAccountMapping): Promise<AccountMapping> {
+    const existing = await this.getAccountMappingByCsvName(mapping.csvAccountName);
+    if (existing) {
+      throw new Error("Mapping for this CSV account already exists");
+    }
     const id = randomUUID();
-    const mapping: AccountMapping = {
+    const newMapping: AccountMapping = {
       id,
-      ...insertMapping,
       createdAt: new Date(),
+      ...mapping,
     };
-    this.accountMappings.set(id, mapping);
-    return mapping;
+    this.accountMappings.set(id, newMapping);
+    return newMapping;
   }
 
   async updateAccountMapping(id: string, mapping: Partial<InsertAccountMapping>): Promise<AccountMapping | undefined> {
@@ -449,4 +562,377 @@ export class MemStorage implements IStorage {
   }
 }
 
-export const storage = new MemStorage();
+export class PgStorage implements IStorage {
+  private pool: Pool;
+  private db;
+
+  constructor(connectionString: string) {
+    this.pool = new Pool({
+      connectionString,
+      ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : undefined,
+    });
+    this.db = drizzle(this.pool, { schema });
+  }
+
+  async initialize() {
+    await this.pool.query("select 1");
+    await this.ensureInitialAdmin();
+  }
+
+  private async ensureInitialAdmin() {
+    const username = process.env.INITIAL_ADMIN_USERNAME;
+    const password = process.env.INITIAL_ADMIN_PASSWORD;
+
+    if (!username || !password) {
+      return;
+    }
+
+    const existing = await this.getUserByUsername(username);
+    if (existing) {
+      return;
+    }
+
+    const bcrypt = await import("bcrypt");
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    await this.createUser({
+      username,
+      password: hashedPassword,
+      role: "Admin",
+    });
+  }
+
+  async getAllUsers(): Promise<User[]> {
+    return await this.db.select().from(users);
+  }
+
+  async getUser(id: string): Promise<User | undefined> {
+    return await this.db.query.users.findFirst({ where: eq(users.id, id) }) || undefined;
+  }
+
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    return await this.db.query.users.findFirst({ where: eq(users.username, username) }) || undefined;
+  }
+
+  async createUser(insertUser: InsertUser): Promise<User> {
+    const [user] = await this.db
+      .insert(users)
+      .values({ ...insertUser, role: insertUser.role || "User" })
+      .returning();
+    return user;
+  }
+
+  async updateUser(id: string, user: Partial<InsertUser>): Promise<User | undefined> {
+    if (Object.keys(user).length === 0) {
+      return await this.getUser(id);
+    }
+    const [updated] = await this.db
+      .update(users)
+      .set(user)
+      .where(eq(users.id, id))
+      .returning();
+    return updated ?? undefined;
+  }
+
+  async deleteUser(id: string): Promise<boolean> {
+    const deleted = await this.db
+      .delete(users)
+      .where(eq(users.id, id))
+      .returning({ id: users.id });
+    return deleted.length > 0;
+  }
+
+  async getAllInternalCompanies(): Promise<InternalCompany[]> {
+    return await this.db.select().from(internalCompanies);
+  }
+
+  async getInternalCompany(id: string): Promise<InternalCompany | undefined> {
+    return await this.db.query.internalCompanies.findFirst({ where: eq(internalCompanies.id, id) }) || undefined;
+  }
+
+  async createInternalCompany(company: InsertInternalCompany): Promise<InternalCompany> {
+    const [created] = await this.db.insert(internalCompanies).values(company).returning();
+    return created;
+  }
+
+  async updateInternalCompany(id: string, company: Partial<InsertInternalCompany>): Promise<InternalCompany | undefined> {
+    const [updated] = await this.db
+      .update(internalCompanies)
+      .set(company)
+      .where(eq(internalCompanies.id, id))
+      .returning();
+    return updated ?? undefined;
+  }
+
+  async deleteInternalCompany(id: string): Promise<boolean> {
+    const deleted = await this.db
+      .delete(internalCompanies)
+      .where(eq(internalCompanies.id, id))
+      .returning({ id: internalCompanies.id });
+    return deleted.length > 0;
+  }
+
+  async getAllPaymentAccounts(): Promise<PaymentAccount[]> {
+    return await this.db.select().from(paymentAccounts);
+  }
+
+  async getPaymentAccount(id: string): Promise<PaymentAccount | undefined> {
+    return await this.db.query.paymentAccounts.findFirst({ where: eq(paymentAccounts.id, id) }) || undefined;
+  }
+
+  async createPaymentAccount(account: InsertPaymentAccount): Promise<PaymentAccount> {
+    const [created] = await this.db
+      .insert(paymentAccounts)
+      .values({ ...account, lastFourDigits: account.lastFourDigits ?? null })
+      .returning();
+    return created;
+  }
+
+  async updatePaymentAccount(id: string, account: Partial<InsertPaymentAccount>): Promise<PaymentAccount | undefined> {
+    const [updated] = await this.db
+      .update(paymentAccounts)
+      .set(account)
+      .where(eq(paymentAccounts.id, id))
+      .returning();
+    return updated ?? undefined;
+  }
+
+  async deletePaymentAccount(id: string): Promise<boolean> {
+    const deleted = await this.db
+      .delete(paymentAccounts)
+      .where(eq(paymentAccounts.id, id))
+      .returning({ id: paymentAccounts.id });
+    return deleted.length > 0;
+  }
+
+  async getAllPaymentTypes(): Promise<PaymentType[]> {
+    return await this.db.select().from(paymentTypes);
+  }
+
+  async getPaymentType(id: string): Promise<PaymentType | undefined> {
+    return await this.db.query.paymentTypes.findFirst({ where: eq(paymentTypes.id, id) }) || undefined;
+  }
+
+  async createPaymentType(type: InsertPaymentType): Promise<PaymentType> {
+    const [created] = await this.db.insert(paymentTypes).values(type).returning();
+    return created;
+  }
+
+  async updatePaymentType(id: string, type: Partial<InsertPaymentType>): Promise<PaymentType | undefined> {
+    const [updated] = await this.db
+      .update(paymentTypes)
+      .set(type)
+      .where(eq(paymentTypes.id, id))
+      .returning();
+    return updated ?? undefined;
+  }
+
+  async deletePaymentType(id: string): Promise<boolean> {
+    const deleted = await this.db
+      .delete(paymentTypes)
+      .where(eq(paymentTypes.id, id))
+      .returning({ id: paymentTypes.id });
+    return deleted.length > 0;
+  }
+
+  async getAllExpenseTypes(): Promise<ExpenseType[]> {
+    return await this.db.select().from(expenseTypes);
+  }
+
+  async getExpenseType(id: string): Promise<ExpenseType | undefined> {
+    return await this.db.query.expenseTypes.findFirst({ where: eq(expenseTypes.id, id) }) || undefined;
+  }
+
+  async createExpenseType(type: InsertExpenseType): Promise<ExpenseType> {
+    const [created] = await this.db.insert(expenseTypes).values(type).returning();
+    return created;
+  }
+
+  async updateExpenseType(id: string, type: Partial<InsertExpenseType>): Promise<ExpenseType | undefined> {
+    const [updated] = await this.db
+      .update(expenseTypes)
+      .set(type)
+      .where(eq(expenseTypes.id, id))
+      .returning();
+    return updated ?? undefined;
+  }
+
+  async deleteExpenseType(id: string): Promise<boolean> {
+    const deleted = await this.db
+      .delete(expenseTypes)
+      .where(eq(expenseTypes.id, id))
+      .returning({ id: expenseTypes.id });
+    return deleted.length > 0;
+  }
+
+  async getAllPaymentSchedules(): Promise<PaymentSchedule[]> {
+    return await this.db.select().from(paymentSchedules);
+  }
+
+  async getPaymentSchedule(id: string): Promise<PaymentSchedule | undefined> {
+    return await this.db.query.paymentSchedules.findFirst({ where: eq(paymentSchedules.id, id) }) || undefined;
+  }
+
+  async getPaymentScheduleByExpenseId(expenseId: string): Promise<PaymentSchedule | undefined> {
+    return await this.db.query.paymentSchedules.findFirst({ where: eq(paymentSchedules.expenseId, expenseId) }) || undefined;
+  }
+
+  async getNextSequenceNumber(internalCompanyAbbr: string, vendorAbbr: string): Promise<number> {
+    const prefix = `${internalCompanyAbbr}-${vendorAbbr}`;
+    const rows = await this.db
+      .select({ expenseId: paymentSchedules.expenseId })
+      .from(paymentSchedules)
+      .where(like(paymentSchedules.expenseId, `${prefix}-%`));
+    const suffixes = rows
+      .map((row) => parseInt(row.expenseId.split("-").pop() || "0", 10))
+      .filter((num) => !Number.isNaN(num));
+    const currentMax = suffixes.length > 0 ? Math.max(...suffixes) : 0;
+    return currentMax + 1;
+  }
+
+  async createPaymentSchedule(schedule: InsertPaymentSchedule): Promise<PaymentSchedule> {
+    const internalCompany = await this.getInternalCompany(schedule.internalCompanyId);
+    if (!internalCompany) {
+      throw new Error("Internal company not found");
+    }
+
+    const sequenceNumber = await this.getNextSequenceNumber(
+      internalCompany.abbreviation,
+      schedule.vendorAbbreviation
+    );
+    const expenseId = `${internalCompany.abbreviation}-${schedule.vendorAbbreviation}-${String(sequenceNumber).padStart(3, "0")}`;
+
+    const [created] = await this.db
+      .insert(paymentSchedules)
+      .values({
+        ...schedule,
+        expenseId,
+        status: schedule.status ?? "scheduled",
+      })
+      .returning();
+
+    return created;
+  }
+
+  async updatePaymentSchedule(id: string, schedule: Partial<InsertPaymentSchedule>): Promise<PaymentSchedule | undefined> {
+    const [updated] = await this.db
+      .update(paymentSchedules)
+      .set(schedule)
+      .where(eq(paymentSchedules.id, id))
+      .returning();
+    return updated ?? undefined;
+  }
+
+  async deletePaymentSchedule(id: string): Promise<boolean> {
+    const deleted = await this.db
+      .delete(paymentSchedules)
+      .where(eq(paymentSchedules.id, id))
+      .returning({ id: paymentSchedules.id });
+    return deleted.length > 0;
+  }
+
+  async getAllPaymentRecords(): Promise<PaymentRecord[]> {
+    return await this.db.select().from(paymentRecords);
+  }
+
+  async getPaymentRecord(id: string): Promise<PaymentRecord | undefined> {
+    return await this.db.query.paymentRecords.findFirst({ where: eq(paymentRecords.id, id) }) || undefined;
+  }
+
+  async getPaymentRecordsByScheduleId(scheduleId: string): Promise<PaymentRecord[]> {
+    return await this.db
+      .select()
+      .from(paymentRecords)
+      .where(eq(paymentRecords.paymentScheduleId, scheduleId));
+  }
+
+  async createPaymentRecord(record: InsertPaymentRecord & { paidBy: string }): Promise<PaymentRecord> {
+    const schedule = record.paymentScheduleId ? await this.getPaymentSchedule(record.paymentScheduleId) : undefined;
+    const resolvedInternalCompanyId = record.internalCompanyId ?? schedule?.internalCompanyId;
+
+    if (!resolvedInternalCompanyId) {
+      throw new Error("Internal company is required for payment records");
+    }
+
+    const [created] = await this.db
+      .insert(paymentRecords)
+      .values({
+        ...record,
+        paymentScheduleId: record.paymentScheduleId ?? null,
+        internalCompanyId: resolvedInternalCompanyId,
+        paymentAccountId: record.paymentAccountId ?? null,
+        approvedBy: record.approvedBy ?? null,
+        confirmationFile: record.confirmationFile ?? null,
+        approvalScreenshot: record.approvalScreenshot ?? null,
+      })
+      .returning();
+
+    if (schedule) {
+      const paymentDate = new Date(record.paymentDate);
+      const update = deriveScheduleUpdate(schedule, paymentDate);
+      if (update) {
+        await this.updatePaymentSchedule(schedule.id, update);
+      }
+    }
+
+    return created;
+  }
+
+  async updatePaymentRecord(id: string, record: Partial<InsertPaymentRecord>): Promise<PaymentRecord | undefined> {
+    const [updated] = await this.db
+      .update(paymentRecords)
+      .set(record)
+      .where(eq(paymentRecords.id, id))
+      .returning();
+    return updated ?? undefined;
+  }
+
+  async deletePaymentRecord(id: string): Promise<boolean> {
+    const deleted = await this.db
+      .delete(paymentRecords)
+      .where(eq(paymentRecords.id, id))
+      .returning({ id: paymentRecords.id });
+    return deleted.length > 0;
+  }
+
+  async getAllAccountMappings(): Promise<AccountMapping[]> {
+    return await this.db.select().from(accountMappings);
+  }
+
+  async getAccountMapping(id: string): Promise<AccountMapping | undefined> {
+    return await this.db.query.accountMappings.findFirst({ where: eq(accountMappings.id, id) }) || undefined;
+  }
+
+  async getAccountMappingByCsvName(csvAccountName: string): Promise<AccountMapping | undefined> {
+    return await this.db.query.accountMappings.findFirst({ where: eq(accountMappings.csvAccountName, csvAccountName) }) || undefined;
+  }
+
+  async createAccountMapping(mapping: InsertAccountMapping): Promise<AccountMapping> {
+    const [created] = await this.db
+      .insert(accountMappings)
+      .values(insertAccountMappingSchema.parse(mapping))
+      .returning();
+    return created;
+  }
+
+  async updateAccountMapping(id: string, mapping: Partial<InsertAccountMapping>): Promise<AccountMapping | undefined> {
+    const [updated] = await this.db
+      .update(accountMappings)
+      .set(mapping)
+      .where(eq(accountMappings.id, id))
+      .returning();
+    return updated ?? undefined;
+  }
+
+  async deleteAccountMapping(id: string): Promise<boolean> {
+    const deleted = await this.db
+      .delete(accountMappings)
+      .where(eq(accountMappings.id, id))
+      .returning({ id: accountMappings.id });
+    return deleted.length > 0;
+  }
+}
+
+export const storage: IStorage = process.env.DATABASE_URL
+  ? new PgStorage(process.env.DATABASE_URL)
+  : new MemStorage();
