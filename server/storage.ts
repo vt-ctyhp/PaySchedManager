@@ -43,6 +43,8 @@ import * as schema from "@shared/schema";
 
 type ScheduleFrequency = PaymentSchedule["frequency"];
 
+const MS_PER_DAY = 1000 * 60 * 60 * 24;
+
 function addFrequencyInterval(date: Date, frequency: ScheduleFrequency): Date | null {
   const next = new Date(date.getTime());
 
@@ -101,6 +103,19 @@ function deriveScheduleUpdate(
     nextDueDate: nextDue,
     status: "scheduled",
   };
+}
+
+function computeDaysLate(dueDate: Date | null | undefined, paymentDate: Date): number {
+  if (!dueDate) {
+    return 0;
+  }
+
+  const diff = paymentDate.getTime() - dueDate.getTime();
+  if (diff <= 0) {
+    return 0;
+  }
+
+  return Math.ceil(diff / MS_PER_DAY);
 }
 
 export interface IStorage {
@@ -480,6 +495,10 @@ export class MemStorage implements IStorage {
       throw new Error("Internal company is required for payment records");
     }
 
+    const rawDueDate = schedule ? new Date(schedule.nextDueDate) : null;
+    const paymentDateInstance = new Date(record.paymentDate);
+    const daysLate = computeDaysLate(rawDueDate, paymentDateInstance);
+
     const newRecord: PaymentRecord = {
       id,
       createdAt: new Date(),
@@ -490,12 +509,13 @@ export class MemStorage implements IStorage {
       paymentAccountId: record.paymentAccountId ?? null,
       confirmationFile: record.confirmationFile ?? null,
       approvalScreenshot: record.approvalScreenshot ?? null,
+      scheduledDueDate: rawDueDate,
+      daysLate,
     };
     this.paymentRecords.set(id, newRecord);
 
     if (schedule) {
-      const paymentDate = new Date(record.paymentDate);
-      const update = deriveScheduleUpdate(schedule, paymentDate);
+      const update = deriveScheduleUpdate(schedule, paymentDateInstance);
       if (update) {
         const updatedSchedule: PaymentSchedule = {
           ...schedule,
@@ -854,6 +874,10 @@ export class PgStorage implements IStorage {
       throw new Error("Internal company is required for payment records");
     }
 
+    const rawDueDate = schedule ? new Date(schedule.nextDueDate) : null;
+    const paymentDateInstance = new Date(record.paymentDate);
+    const daysLate = computeDaysLate(rawDueDate, paymentDateInstance);
+
     const [created] = await this.db
       .insert(paymentRecords)
       .values({
@@ -864,12 +888,13 @@ export class PgStorage implements IStorage {
         approvedBy: record.approvedBy ?? null,
         confirmationFile: record.confirmationFile ?? null,
         approvalScreenshot: record.approvalScreenshot ?? null,
+        scheduledDueDate: rawDueDate ?? null,
+        daysLate,
       })
       .returning();
 
     if (schedule) {
-      const paymentDate = new Date(record.paymentDate);
-      const update = deriveScheduleUpdate(schedule, paymentDate);
+      const update = deriveScheduleUpdate(schedule, paymentDateInstance);
       if (update) {
         await this.updatePaymentSchedule(schedule.id, update);
       }

@@ -164,6 +164,11 @@ export default function Dashboard() {
             ? companyLabel
             : `${companyLabel} · ${vendorLabel}`)
         : vendorLabel || "Unknown";
+      const scheduledDueDate = record.scheduledDueDate
+        ? new Date(record.scheduledDueDate)
+        : schedule
+        ? new Date(schedule.nextDueDate)
+        : undefined;
       
       return {
         id: record.id,
@@ -175,6 +180,8 @@ export default function Dashboard() {
         account: account ? `${account.name}${account.lastFourDigits ? ` (*${account.lastFourDigits})` : ''}` : undefined,
         hasConfirmation: !!record.confirmationFile,
         confirmationFile: record.confirmationFile,
+        daysLate: Number(record.daysLate ?? 0),
+        scheduledDueDate,
       };
     });
   }, [records, schedules, users, paymentAccounts, companies]);

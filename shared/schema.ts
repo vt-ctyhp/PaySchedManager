@@ -102,6 +102,8 @@ export const paymentRecords = pgTable("payment_records", {
   paymentAccountId: varchar("payment_account_id"), // Foreign key to payment accounts
   confirmationFile: text("confirmation_file"),
   approvalScreenshot: text("approval_screenshot"),
+  scheduledDueDate: timestamp("scheduled_due_date"),
+  daysLate: integer("days_late").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -110,6 +112,8 @@ export const insertPaymentRecordSchema = createInsertSchema(paymentRecords)
     id: true,
     paidBy: true, // Will be auto-filled from logged-in user
     createdAt: true,
+    scheduledDueDate: true,
+    daysLate: true,
   })
   .extend({
     paymentDate: z.coerce.date(),

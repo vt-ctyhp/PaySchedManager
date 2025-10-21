@@ -30,7 +30,8 @@ import {
   FileText,
   CheckCircle2,
   XCircle,
-  AlertCircle
+  AlertCircle,
+  Clock3
 } from "lucide-react";
 import {
   addDays,
@@ -145,10 +146,11 @@ export default function Reports() {
     });
 
     const issueList: Array<{
-      type: "overdue" | "underpaid" | "overpaid";
+      type: "overdue" | "underpaid" | "overpaid" | "late";
       schedule: PaymentSchedule;
       company?: InternalCompany;
       detail: string;
+      daysLate?: number;
     }> = [];
 
     schedules.forEach((schedule) => {
@@ -196,8 +198,41 @@ export default function Reports() {
       }
     });
 
+    records.forEach((record) => {
+      if (!record.daysLate || record.daysLate <= 0) {
+        return;
+      }
+
+      const schedule =
+        record.paymentScheduleId
+          ? schedules.find((s) => s.id === record.paymentScheduleId)
+          : schedules.find((s) => s.expenseId === record.expenseId);
+
+      if (!schedule) {
+        return;
+      }
+
+      const company =
+        companyLookup.get(schedule.internalCompanyId) ??
+        companyLookup.get(record.internalCompanyId);
+      const dueDate = record.scheduledDueDate
+        ? new Date(record.scheduledDueDate)
+        : undefined;
+      const paymentDate = new Date(record.paymentDate);
+
+      issueList.push({
+        type: "late",
+        schedule,
+        company,
+        daysLate: record.daysLate,
+        detail: `Paid on ${format(paymentDate, "MMM dd, yyyy")} (${record.daysLate} day${record.daysLate === 1 ? "" : "s"} late${
+          dueDate ? `; due ${format(dueDate, "MMM dd, yyyy")}` : ""
+        })`,
+      });
+    });
+
     return issueList.sort((a, b) => {
-      const priority = { overdue: 0, underpaid: 1, overpaid: 2 } as const;
+      const priority = { overdue: 0, late: 1, underpaid: 2, overpaid: 3 } as const;
       return priority[a.type] - priority[b.type];
     });
   }, [schedules, records, companyLookup, now]);
@@ -402,7 +437,7 @@ export default function Reports() {
                   <CardTitle>Payment Issues</CardTitle>
                 </div>
                 <CardDescription className="mt-2">
-                  Overdue, underpaid, or overpaid items that need attention
+                  Overdue, late, underpaid, or overpaid items that need attention
                 </CardDescription>
               </div>
               <Badge 
@@ -440,10 +475,12 @@ export default function Reports() {
                         <div className="flex items-center gap-2 flex-wrap">
                           <Badge
                             variant={
-                              issue.type === "overdue" 
-                                ? "destructive" 
-                                : issue.type === "underpaid" 
-                                ? "secondary" 
+                              issue.type === "overdue"
+                                ? "destructive"
+                                : issue.type === "underpaid"
+                                ? "secondary"
+                                : issue.type === "late"
+                                ? "outline"
                                 : "outline"
                             }
                             className="flex items-center gap-1"
@@ -451,7 +488,9 @@ export default function Reports() {
                             {issue.type === "overdue" && <AlertCircle className="h-3 w-3" />}
                             {issue.type === "underpaid" && <ArrowUpRight className="h-3 w-3" />}
                             {issue.type === "overpaid" && <TrendingUp className="h-3 w-3" />}
+                            {issue.type === "late" && <Clock3 className="h-3 w-3" />}
                             {issue.type === "overdue" && "Overdue"}
+                            {issue.type === "late" && "Late Payment"}
                             {issue.type === "underpaid" && "Underpaid"}
                             {issue.type === "overpaid" && "Overpaid"}
                           </Badge>
@@ -475,7 +514,11 @@ export default function Reports() {
                     </div>
                     <Separator className="my-3" />
                     <div className="flex items-start gap-2">
-                      <AlertTriangle className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" />
+                      {issue.type === "late" ? (
+                        <Clock3 className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" />
+                      ) : (
+                        <AlertTriangle className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" />
+                      )}
                       <p className="text-sm text-muted-foreground">{issue.detail}</p>
                     </div>
                   </div>

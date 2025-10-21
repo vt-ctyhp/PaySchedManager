@@ -14,6 +14,8 @@ interface PaymentRecord {
   account?: string;
   hasConfirmation: boolean;
   confirmationFile?: string | null;
+  scheduledDueDate?: Date;
+  daysLate?: number;
 }
 
 interface PaymentHistoryTableProps {
@@ -53,6 +55,7 @@ export default function PaymentHistoryTable({ payments }: PaymentHistoryTablePro
             <TableHead className="text-right">Amount</TableHead>
             <TableHead>Payer</TableHead>
             <TableHead>Method</TableHead>
+            <TableHead>Timing</TableHead>
             <TableHead>Account</TableHead>
             <TableHead className="text-right">Confirmation</TableHead>
           </TableRow>
@@ -60,7 +63,7 @@ export default function PaymentHistoryTable({ payments }: PaymentHistoryTablePro
         <TableBody>
           {payments.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+              <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                 No payment records found
               </TableCell>
             </TableRow>
@@ -84,6 +87,27 @@ export default function PaymentHistoryTable({ payments }: PaymentHistoryTablePro
                   >
                     {methodLabels[payment.method] || payment.method}
                   </Badge>
+                </TableCell>
+                <TableCell>
+                  {payment.daysLate && payment.daysLate > 0 ? (
+                    <Badge variant="destructive" data-testid={`badge-late-${payment.id}`}>
+                      {payment.daysLate} day{payment.daysLate === 1 ? "" : "s"} late
+                      {payment.scheduledDueDate && (
+                        <span className="ml-1 text-xs text-destructive-foreground/80">
+                          (due {format(payment.scheduledDueDate, "MMM dd")})
+                        </span>
+                      )}
+                    </Badge>
+                  ) : (
+                    <Badge variant="secondary" data-testid={`badge-on-time-${payment.id}`}>
+                      On time
+                      {payment.scheduledDueDate && (
+                        <span className="ml-1 text-xs text-muted-foreground">
+                          (due {format(payment.scheduledDueDate, "MMM dd")})
+                        </span>
+                      )}
+                    </Badge>
+                  )}
                 </TableCell>
                 <TableCell className="font-mono text-sm" data-testid={`text-account-${payment.id}`}>
                   {payment.account || "—"}
