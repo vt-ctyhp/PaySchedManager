@@ -11,6 +11,7 @@ import {
   insertPaymentRecordSchema,
   insertUserSchema,
   insertAccountMappingSchema,
+  type InsertPaymentRecord,
 } from "@shared/schema";
 import { hashPassword, authenticateUser, requireAuth, requireAdmin, getCurrentUser } from "./auth";
 import { upload, persistUploadedFile, getFileStream } from "./upload";
@@ -569,6 +570,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(400).json({ message: "Invalid data" });
     }
   });
+
+  app.put(
+    "/api/payment-records/:id/files",
+    requireAuth,
+    upload.fields([
+      { name: "confirmationFile", maxCount: 1 },
+      { name: "approvalScreenshot", maxCount: 1 },
+    ]),
+    async (req, res) => {
+      try {
+        const files = req.files as Record<string, Express.Multer.File[]> | undefined;
+        const confirmation = files?.confirmationFile?.[0];
+        const approval = files?.approvalScreenshot?.[0];
+
+        if (!confirmation && !approval) {
+          return res.status(400).json({ message: "No files provided" });
+        }
+
+        const updates: Partial<InsertPaymentRecord> & {
+          confirmationFile?: string | null;
+          approvalScreenshot?: string | null;
+        } = {};
+
+        if (confirmation) {
+          updates.confirmationFile = await persistUploadedFile(confirmation);
+        }
+
+        if (approval) {
+          updates.approvalScreenshot = await persistUploadedFile(approval);
+        }
+
+        const record = await storage.updatePaymentRecord(req.params.id, updates);
+        if (!record) {
+          return res.status(404).json({ message: "Record not found" });
+        }
+
+        res.json(record);
+      } catch (error: any) {
+        res.status(500).json({ message: error?.message || "Failed to update files" });
+      }
+    },
+  );
 
   app.delete("/api/payment-records/:id", requireAdmin, async (req, res) => {
     try {

@@ -195,6 +195,8 @@ export default function Dashboard() {
         account: account ? `${account.name}${account.lastFourDigits ? ` (*${account.lastFourDigits})` : ''}` : undefined,
         hasConfirmation: !!record.confirmationFile,
         confirmationFile: record.confirmationFile,
+        hasApproval: !!record.approvalScreenshot,
+        approvalFile: record.approvalScreenshot,
         daysLate: normalizedDaysLate,
         scheduledDueDate,
       };
