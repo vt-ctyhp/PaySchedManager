@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import {
@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
+import { Textarea } from "@/components/ui/textarea";
 
 interface ManagePaymentFilesDialogProps {
   paymentId: string;
@@ -31,11 +32,24 @@ export default function ManagePaymentFilesDialog({
   const { toast } = useToast();
   const [confirmationFile, setConfirmationFile] = useState<File | null>(null);
   const [approvalFile, setApprovalFile] = useState<File | null>(null);
+  const [reason, setReason] = useState("");
+
+  useEffect(() => {
+    if (!open) {
+      setConfirmationFile(null);
+      setApprovalFile(null);
+      setReason("");
+    }
+  }, [open]);
 
   const mutation = useMutation({
     mutationFn: async () => {
       if (!confirmationFile && !approvalFile) {
         throw new Error("Please select a file to upload.");
+      }
+
+      if (!reason.trim()) {
+        throw new Error("Reason is required.");
       }
 
       const formData = new FormData();
@@ -45,6 +59,7 @@ export default function ManagePaymentFilesDialog({
       if (approvalFile) {
         formData.append("approvalScreenshot", approvalFile);
       }
+      formData.append("reason", reason.trim());
 
       const response = await fetch(`/api/payment-records/${paymentId}/files`, {
         method: "PUT",
@@ -64,6 +79,7 @@ export default function ManagePaymentFilesDialog({
       toast({ title: "Files updated successfully" });
       setConfirmationFile(null);
       setApprovalFile(null);
+      setReason("");
       onOpenChange(false);
     },
     onError: (error: any) => {
@@ -86,6 +102,18 @@ export default function ManagePaymentFilesDialog({
         </DialogHeader>
 
         <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="reason">Reason for update</Label>
+            <Textarea
+              id="reason"
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              placeholder="Provide context for updating these files"
+              rows={3}
+              required
+            />
+          </div>
+
           <div className="space-y-2">
             <Label htmlFor="confirmation-upload">
               Confirmation File{" "}

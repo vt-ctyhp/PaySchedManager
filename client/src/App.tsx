@@ -8,6 +8,7 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import Dashboard from "@/pages/Dashboard";
 import Reports from "@/pages/Reports";
 import Settings from "@/pages/Settings";
+import AuditLog from "@/pages/AuditLog";
 import Login from "@/pages/Login";
 import NotFound from "@/pages/not-found";
 import ThemeToggle from "@/components/ThemeToggle";
@@ -24,6 +25,9 @@ function Router() {
       </Route>
       <Route path="/settings">
         {() => <ProtectedRoute component={Settings} />}
+      </Route>
+      <Route path="/audit">
+        {() => <ProtectedRoute component={AuditLog} />}
       </Route>
       <Route component={NotFound} />
     </Switch>

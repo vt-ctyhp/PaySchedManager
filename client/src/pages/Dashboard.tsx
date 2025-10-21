@@ -40,7 +40,7 @@ import { differenceInDays, format } from "date-fns";
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
 export default function Dashboard() {
-  const { user, logout } = useAuth();
+  const { user, logout, isAdmin } = useAuth();
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("all");
@@ -199,6 +199,9 @@ export default function Dashboard() {
         approvalFile: record.approvalScreenshot,
         daysLate: normalizedDaysLate,
         scheduledDueDate,
+        paymentMethod: record.paymentMethod,
+        paymentAccountId: record.paymentAccountId ?? null,
+        rawRecord: record,
       };
     });
   }, [records, schedules, users, paymentAccounts, companies]);
@@ -242,6 +245,11 @@ export default function Dashboard() {
             <Button asChild variant="secondary" data-testid="button-reports">
               <Link href="/reports">Reports</Link>
             </Button>
+            {isAdmin && (
+              <Button asChild variant="outline" data-testid="button-audit">
+                <Link href="/audit">Audit Log</Link>
+              </Button>
+            )}
             <Button asChild variant="outline" size="icon" data-testid="button-settings">
               <Link href="/settings">
                 <SettingsIcon className="h-4 w-4" />
@@ -393,7 +401,11 @@ export default function Dashboard() {
                   scheduledAmount={recordingSchedule ? parseFloat(recordingSchedule.amount) : undefined}
                 />
               </div>
-              <PaymentHistoryTable payments={enrichedRecords} />
+              <PaymentHistoryTable
+                payments={enrichedRecords}
+                paymentAccounts={paymentAccounts}
+                approvers={users}
+              />
             </div>
           </TabsContent>
         </Tabs>

@@ -5,8 +5,11 @@ import { Button } from "@/components/ui/button";
 import { FileText, Download, Upload } from "lucide-react";
 import { format } from "date-fns";
 import ManagePaymentFilesDialog from "@/components/ManagePaymentFilesDialog";
+import EditPaymentRecordDialog from "@/components/EditPaymentRecordDialog";
+import DeletePaymentRecordDialog from "@/components/DeletePaymentRecordDialog";
+import type { PaymentAccount, PaymentRecord as PaymentRecordModel } from "@shared/schema";
 
-interface PaymentRecord {
+interface PaymentHistoryRow {
   id: string;
   date: Date;
   company: string;
@@ -20,10 +23,14 @@ interface PaymentRecord {
   daysLate?: number;
   hasApproval: boolean;
   approvalFile?: string | null;
+  paymentAccountId: string | null;
+  rawRecord: PaymentRecordModel;
 }
 
 interface PaymentHistoryTableProps {
-  payments: PaymentRecord[];
+  payments: PaymentHistoryRow[];
+  paymentAccounts: PaymentAccount[];
+  approvers: { id: string; username: string }[];
 }
 
 const methodColors: Record<string, string> = {
@@ -44,15 +51,23 @@ const methodLabels: Record<string, string> = {
   other: "Other",
 };
 
-export default function PaymentHistoryTable({ payments }: PaymentHistoryTableProps) {
+export default function PaymentHistoryTable({
+  payments,
+  paymentAccounts,
+  approvers,
+}: PaymentHistoryTableProps) {
   const handleDownload = (filename: string) => {
     window.open(`/api/files/${filename}`, '_blank');
   };
 
-  const [managedPayment, setManagedPayment] = useState<PaymentRecord | null>(null);
+  const [managedPayment, setManagedPayment] = useState<PaymentHistoryRow | null>(null);
   const [manageDialogOpen, setManageDialogOpen] = useState(false);
+  const [editingPayment, setEditingPayment] = useState<PaymentHistoryRow | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [deletingPayment, setDeletingPayment] = useState<PaymentHistoryRow | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
-  const openManageDialog = (payment: PaymentRecord) => {
+  const openManageDialog = (payment: PaymentHistoryRow) => {
     setManagedPayment(payment);
     setManageDialogOpen(true);
   };
@@ -60,6 +75,26 @@ export default function PaymentHistoryTable({ payments }: PaymentHistoryTablePro
   const closeManageDialog = () => {
     setManageDialogOpen(false);
     setManagedPayment(null);
+  };
+
+  const openEditDialog = (payment: PaymentHistoryRow) => {
+    setEditingPayment(payment);
+    setEditDialogOpen(true);
+  };
+
+  const closeEditDialog = () => {
+    setEditDialogOpen(false);
+    setEditingPayment(null);
+  };
+
+  const openDeleteDialog = (payment: PaymentHistoryRow) => {
+    setDeletingPayment(payment);
+    setDeleteDialogOpen(true);
+  };
+
+  const closeDeleteDialog = () => {
+    setDeleteDialogOpen(false);
+    setDeletingPayment(null);
   };
 
   return (
@@ -162,7 +197,7 @@ export default function PaymentHistoryTable({ payments }: PaymentHistoryTablePro
                       <FileText className="h-4 w-4 text-muted-foreground inline-block" />
                     )}
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="text-right space-x-2">
                     <Button
                       size="sm"
                       variant="outline"
@@ -170,7 +205,23 @@ export default function PaymentHistoryTable({ payments }: PaymentHistoryTablePro
                       data-testid={`button-manage-files-${payment.id}`}
                     >
                       <Upload className="h-4 w-4 mr-2" />
-                      Manage
+                      Files
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => openEditDialog(payment)}
+                      data-testid={`button-edit-payment-${payment.id}`}
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => openDeleteDialog(payment)}
+                      data-testid={`button-delete-payment-${payment.id}`}
+                    >
+                      Delete
                     </Button>
                   </TableCell>
                 </TableRow>
@@ -193,6 +244,38 @@ export default function PaymentHistoryTable({ payments }: PaymentHistoryTablePro
           paymentId={managedPayment.id}
           hasConfirmation={managedPayment.hasConfirmation}
           hasApproval={managedPayment.hasApproval}
+        />
+      )}
+
+      {editingPayment && (
+        <EditPaymentRecordDialog
+          open={editDialogOpen}
+          onOpenChange={(open) => {
+            if (!open) {
+              closeEditDialog();
+            } else {
+              setEditDialogOpen(true);
+            }
+          }}
+          payment={editingPayment.rawRecord}
+          displayAmount={editingPayment.amount}
+          displayDate={editingPayment.date}
+          paymentAccounts={paymentAccounts}
+          approvers={approvers}
+        />
+      )}
+
+      {deletingPayment && (
+        <DeletePaymentRecordDialog
+          open={deleteDialogOpen}
+          onOpenChange={(open) => {
+            if (!open) {
+              closeDeleteDialog();
+            } else {
+              setDeleteDialogOpen(true);
+            }
+          }}
+          payment={deletingPayment.rawRecord}
         />
       )}
     </>

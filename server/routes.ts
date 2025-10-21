@@ -560,8 +560,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put("/api/payment-records/:id", requireAuth, async (req, res) => {
     try {
-      const data = insertPaymentRecordSchema.partial().parse(req.body);
-      const record = await storage.updatePaymentRecord(req.params.id, data);
+      const { reason, ...payload } = req.body ?? {};
+
+      if (typeof reason !== "string" || reason.trim().length === 0) {
+        return res.status(400).json({ message: "Reason is required" });
+      }
+
+      const data = insertPaymentRecordSchema.partial().parse(payload);
+      const record = await storage.updatePaymentRecord(req.params.id, data, {
+        reason: reason.trim(),
+        performedBy: req.session.userId!,
+      });
       if (!record) {
         return res.status(404).json({ message: "Record not found" });
       }
@@ -581,11 +590,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     async (req, res) => {
       try {
         const files = req.files as Record<string, Express.Multer.File[]> | undefined;
+        const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
         const confirmation = files?.confirmationFile?.[0];
         const approval = files?.approvalScreenshot?.[0];
 
         if (!confirmation && !approval) {
           return res.status(400).json({ message: "No files provided" });
+        }
+
+        if (!reason) {
+          return res.status(400).json({ message: "Reason is required" });
         }
 
         const updates: Partial<InsertPaymentRecord> & {
@@ -601,7 +615,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           updates.approvalScreenshot = await persistUploadedFile(approval);
         }
 
-        const record = await storage.updatePaymentRecord(req.params.id, updates);
+        const record = await storage.updatePaymentRecord(req.params.id, updates, {
+          reason,
+          performedBy: req.session.userId!,
+        });
         if (!record) {
           return res.status(404).json({ message: "Record not found" });
         }
@@ -615,13 +632,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/payment-records/:id", requireAdmin, async (req, res) => {
     try {
-      const success = await storage.deletePaymentRecord(req.params.id);
+      const reason =
+        typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
+
+      if (!reason) {
+        return res.status(400).json({ message: "Reason is required" });
+      }
+
+      const success = await storage.deletePaymentRecord(req.params.id, {
+        reason,
+        performedBy: req.session.userId!,
+      });
       if (!success) {
         return res.status(404).json({ message: "Record not found" });
       }
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ message: "Failed to delete record" });
+    }
+  });
+
+  app.get("/api/payment-record-audits", requireAdmin, async (_req, res) => {
+    try {
+      const audits = await storage.getAllPaymentRecordAudits();
+      res.json(audits);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch audit logs" });
+    }
+  });
+
+  app.get("/api/payment-records/:id/audits", requireAuth, async (req, res) => {
+    try {
+      const audits = await storage.getPaymentRecordAuditsByRecord(req.params.id);
+      res.json(audits);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch audit logs" });
     }
   });
 

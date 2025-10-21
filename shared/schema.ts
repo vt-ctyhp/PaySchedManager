@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, decimal, timestamp, integer } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, decimal, timestamp, integer, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -123,6 +123,26 @@ export const insertPaymentRecordSchema = createInsertSchema(paymentRecords)
 
 export type InsertPaymentRecord = z.infer<typeof insertPaymentRecordSchema>;
 export type PaymentRecord = typeof paymentRecords.$inferSelect;
+
+// Payment Record Audit Logs
+export const paymentRecordAudits = pgTable("payment_record_audits", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  paymentRecordId: varchar("payment_record_id").notNull(),
+  action: text("action").notNull(), // "edit" | "delete"
+  reason: text("reason").notNull(),
+  beforeSnapshot: jsonb("before_snapshot").notNull(),
+  afterSnapshot: jsonb("after_snapshot"),
+  performedBy: varchar("performed_by").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertPaymentRecordAuditSchema = createInsertSchema(paymentRecordAudits).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertPaymentRecordAudit = z.infer<typeof insertPaymentRecordAuditSchema>;
+export type PaymentRecordAudit = typeof paymentRecordAudits.$inferSelect;
 
 // Users
 export const users = pgTable("users", {

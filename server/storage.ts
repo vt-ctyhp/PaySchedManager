@@ -4,6 +4,7 @@ import { Pool } from "pg";
 import {
   eq,
   like,
+  desc,
 } from "drizzle-orm";
 import {
   users,
@@ -14,6 +15,7 @@ import {
   paymentSchedules,
   paymentRecords,
   accountMappings,
+  paymentRecordAudits,
   insertUserSchema,
   insertInternalCompanySchema,
   insertPaymentAccountSchema,
@@ -22,6 +24,7 @@ import {
   insertPaymentScheduleSchema,
   insertPaymentRecordSchema,
   insertAccountMappingSchema,
+  insertPaymentRecordAuditSchema,
   type User,
   type InsertUser,
   type InternalCompany,
@@ -38,6 +41,8 @@ import {
   type InsertPaymentRecord,
   type AccountMapping,
   type InsertAccountMapping,
+  type PaymentRecordAudit,
+  type InsertPaymentRecordAudit,
 } from "@shared/schema";
 import * as schema from "@shared/schema";
 
@@ -182,9 +187,15 @@ export interface IStorage {
     record: Partial<InsertPaymentRecord> & {
       confirmationFile?: string | null;
       approvalScreenshot?: string | null;
-    }
+    },
+    audit?: { reason: string; performedBy: string }
   ): Promise<PaymentRecord | undefined>;
-  deletePaymentRecord(id: string): Promise<boolean>;
+  deletePaymentRecord(
+    id: string,
+    audit?: { reason: string; performedBy: string }
+  ): Promise<boolean>;
+  getAllPaymentRecordAudits(): Promise<PaymentRecordAudit[]>;
+  getPaymentRecordAuditsByRecord(paymentRecordId: string): Promise<PaymentRecordAudit[]>;
 
   // Account Mappings
   getAllAccountMappings(): Promise<AccountMapping[]>;
@@ -204,6 +215,7 @@ export class MemStorage implements IStorage {
   private paymentSchedules: Map<string, PaymentSchedule>;
   private paymentRecords: Map<string, PaymentRecord>;
   private accountMappings: Map<string, AccountMapping>;
+  private paymentRecordAudits: PaymentRecordAudit[];
 
   constructor() {
     this.users = new Map();
@@ -214,6 +226,7 @@ export class MemStorage implements IStorage {
     this.paymentSchedules = new Map();
     this.paymentRecords = new Map();
     this.accountMappings = new Map();
+    this.paymentRecordAudits = [];
   }
 
   async initialize() {
@@ -528,16 +541,62 @@ export class MemStorage implements IStorage {
     return newRecord;
   }
 
-  async updatePaymentRecord(id: string, record: Partial<InsertPaymentRecord>): Promise<PaymentRecord | undefined> {
+  async updatePaymentRecord(
+    id: string,
+    record: Partial<InsertPaymentRecord>,
+    audit?: { reason: string; performedBy: string },
+  ): Promise<PaymentRecord | undefined> {
     const existing = this.paymentRecords.get(id);
     if (!existing) return undefined;
     const updated = { ...existing, ...record };
     this.paymentRecords.set(id, updated);
+    if (audit) {
+      this.paymentRecordAudits.push({
+        id: randomUUID(),
+        paymentRecordId: id,
+        action: "edit",
+        reason: audit.reason,
+        beforeSnapshot: JSON.parse(JSON.stringify(existing)),
+        afterSnapshot: JSON.parse(JSON.stringify(updated)),
+        performedBy: audit.performedBy,
+        createdAt: new Date(),
+      });
+    }
     return updated;
   }
 
-  async deletePaymentRecord(id: string): Promise<boolean> {
-    return this.paymentRecords.delete(id);
+  async deletePaymentRecord(
+    id: string,
+    audit?: { reason: string; performedBy: string },
+  ): Promise<boolean> {
+    const existing = this.paymentRecords.get(id);
+    if (!existing) return false;
+    const deleted = this.paymentRecords.delete(id);
+    if (deleted && audit) {
+      this.paymentRecordAudits.push({
+        id: randomUUID(),
+        paymentRecordId: id,
+        action: "delete",
+        reason: audit.reason,
+        beforeSnapshot: JSON.parse(JSON.stringify(existing)),
+        afterSnapshot: null,
+        performedBy: audit.performedBy,
+        createdAt: new Date(),
+      });
+    }
+    return deleted;
+  }
+
+  async getAllPaymentRecordAudits(): Promise<PaymentRecordAudit[]> {
+    return [...this.paymentRecordAudits].sort(
+      (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
+    );
+  }
+
+  async getPaymentRecordAuditsByRecord(paymentRecordId: string): Promise<PaymentRecordAudit[]> {
+    return this.paymentRecordAudits
+      .filter((log) => log.paymentRecordId === paymentRecordId)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
 
   async getAllAccountMappings(): Promise<AccountMapping[]> {
@@ -903,21 +962,89 @@ export class PgStorage implements IStorage {
     return created;
   }
 
-  async updatePaymentRecord(id: string, record: Partial<InsertPaymentRecord>): Promise<PaymentRecord | undefined> {
+  async updatePaymentRecord(
+    id: string,
+    record: Partial<InsertPaymentRecord>,
+    audit?: { reason: string; performedBy: string },
+  ): Promise<PaymentRecord | undefined> {
+    const existing = await this.getPaymentRecord(id);
+    if (!existing) {
+      return undefined;
+    }
+
     const [updated] = await this.db
       .update(paymentRecords)
       .set(record)
       .where(eq(paymentRecords.id, id))
       .returning();
-    return updated ?? undefined;
+    if (!updated) {
+      return undefined;
+    }
+
+    if (audit) {
+      await this.db
+        .insert(paymentRecordAudits)
+        .values(
+          insertPaymentRecordAuditSchema.parse({
+            paymentRecordId: id,
+            action: "edit",
+            reason: audit.reason,
+            beforeSnapshot: existing,
+            afterSnapshot: updated,
+            performedBy: audit.performedBy,
+          }),
+        );
+    }
+
+    return updated;
   }
 
-  async deletePaymentRecord(id: string): Promise<boolean> {
+  async deletePaymentRecord(
+    id: string,
+    audit?: { reason: string; performedBy: string },
+  ): Promise<boolean> {
+    const existing = await this.getPaymentRecord(id);
+    if (!existing) {
+      return false;
+    }
+
     const deleted = await this.db
       .delete(paymentRecords)
       .where(eq(paymentRecords.id, id))
       .returning({ id: paymentRecords.id });
-    return deleted.length > 0;
+    const success = deleted.length > 0;
+
+    if (success && audit) {
+      await this.db
+        .insert(paymentRecordAudits)
+        .values(
+          insertPaymentRecordAuditSchema.parse({
+            paymentRecordId: id,
+            action: "delete",
+            reason: audit.reason,
+            beforeSnapshot: existing,
+            afterSnapshot: null,
+            performedBy: audit.performedBy,
+          }),
+        );
+    }
+
+    return success;
+  }
+
+  async getAllPaymentRecordAudits(): Promise<PaymentRecordAudit[]> {
+    return await this.db
+      .select()
+      .from(paymentRecordAudits)
+      .orderBy(desc(paymentRecordAudits.createdAt));
+  }
+
+  async getPaymentRecordAuditsByRecord(paymentRecordId: string): Promise<PaymentRecordAudit[]> {
+    return await this.db
+      .select()
+      .from(paymentRecordAudits)
+      .where(eq(paymentRecordAudits.paymentRecordId, paymentRecordId))
+      .orderBy(desc(paymentRecordAudits.createdAt));
   }
 
   async getAllAccountMappings(): Promise<AccountMapping[]> {
