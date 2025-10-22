@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -13,6 +13,14 @@ import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import type { PaymentSchedule, PaymentAccount, User } from "@shared/schema";
 
+export interface RecordPaymentInitialValues {
+  paymentDate?: Date;
+  amount?: number;
+  paymentMethod?: string;
+  paymentAccountId?: string;
+  approvedBy?: string;
+}
+
 interface RecordPaymentDialogProps {
   trigger?: React.ReactNode;
   scheduleId?: string;
@@ -20,6 +28,7 @@ interface RecordPaymentDialogProps {
   scheduledAmount?: number;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  initialValues?: RecordPaymentInitialValues;
 }
 
 export default function RecordPaymentDialog({ 
@@ -29,6 +38,7 @@ export default function RecordPaymentDialog({
   scheduledAmount,
   open: controlledOpen,
   onOpenChange,
+  initialValues,
 }: RecordPaymentDialogProps) {
   const { toast } = useToast();
   const [internalOpen, setInternalOpen] = useState(false);
@@ -44,19 +54,30 @@ export default function RecordPaymentDialog({
   const [selectedExpenseId, setSelectedExpenseId] = useState(preselectedExpenseId || "");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const applyInitialValues = useCallback(() => {
+    setPaymentDate(initialValues?.paymentDate);
+    const baseAmount =
+      initialValues?.amount ??
+      (typeof scheduledAmount === "number" ? scheduledAmount : undefined);
+    setAmount(
+      baseAmount !== undefined && !Number.isNaN(baseAmount)
+        ? baseAmount.toString()
+        : "",
+    );
+    setApprovedBy(initialValues?.approvedBy ?? "");
+    setMethod(initialValues?.paymentMethod ?? "");
+    setPaymentAccountId(initialValues?.paymentAccountId ?? "");
+    setApprovalFile(null);
+    setFile(null);
+    setSelectedExpenseId(preselectedExpenseId || "");
+  }, [initialValues, preselectedExpenseId, scheduledAmount]);
+
   // Reset form when dialog opens with pre-filled data
   useEffect(() => {
     if (open) {
-      setPaymentDate(undefined);
-      setAmount(scheduledAmount?.toString() || "");
-      setApprovedBy("");
-      setMethod("");
-      setPaymentAccountId("");
-      setApprovalFile(null);
-      setFile(null);
-      setSelectedExpenseId(preselectedExpenseId || "");
+      applyInitialValues();
     }
-  }, [open, preselectedExpenseId, scheduledAmount]);
+  }, [open, applyInitialValues]);
 
   const { data: schedules = [] } = useQuery<PaymentSchedule[]>({
     queryKey: ["/api/payment-schedules"],
@@ -71,16 +92,7 @@ export default function RecordPaymentDialog({
   });
 
   const resetForm = () => {
-    setPaymentDate(undefined);
-    setAmount(scheduledAmount?.toString() || "");
-    setApprovedBy("");
-    setMethod("");
-    setPaymentAccountId("");
-    setApprovalFile(null);
-    setFile(null);
-    if (!preselectedExpenseId) {
-      setSelectedExpenseId("");
-    }
+    applyInitialValues();
   };
 
   const handleSubmit = async (e: React.FormEvent) => {

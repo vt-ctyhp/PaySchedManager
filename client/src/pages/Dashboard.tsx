@@ -1,11 +1,11 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { DollarSign, Calendar, Clock, AlertCircle, LogOut, Settings as SettingsIcon } from "lucide-react";
 import QuickStatsCard from "@/components/QuickStatsCard";
 import PaymentScheduleCard from "@/components/PaymentScheduleCard";
 import AddPaymentDialog from "@/components/AddPaymentDialog";
 import EditPaymentDialog from "@/components/EditPaymentDialog";
-import RecordPaymentDialog from "@/components/RecordPaymentDialog";
+import RecordPaymentDialog, { type RecordPaymentInitialValues } from "@/components/RecordPaymentDialog";
 import PaymentHistoryTable from "@/components/PaymentHistoryTable";
 import { CSVImportDialog } from "@/components/CSVImportDialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -49,6 +49,45 @@ export default function Dashboard() {
   const [deletingScheduleId, setDeletingScheduleId] = useState<string | null>(null);
   const [recordingSchedule, setRecordingSchedule] = useState<PaymentSchedule | null>(null);
   const [recordDialogOpen, setRecordDialogOpen] = useState(false);
+  const [recordPrefill, setRecordPrefill] = useState<{
+    values: RecordPaymentInitialValues;
+    expenseId?: string;
+  } | null>(null);
+  const handleOneTimeScheduleCreated = useCallback(
+    ({
+      schedule,
+      recordDefaults,
+    }: {
+      schedule: PaymentSchedule;
+      recordDefaults: {
+        paymentDate: Date;
+        amount: number;
+        paymentMethod: string;
+        paymentAccountId?: string | null;
+      };
+    }) => {
+      const paymentDate =
+        recordDefaults.paymentDate instanceof Date &&
+        !Number.isNaN(recordDefaults.paymentDate.getTime())
+          ? recordDefaults.paymentDate
+          : undefined;
+      const amountValue = Number.isFinite(recordDefaults.amount)
+        ? recordDefaults.amount
+        : undefined;
+      setRecordingSchedule(schedule);
+      setRecordPrefill({
+        expenseId: schedule.expenseId,
+        values: {
+          paymentDate,
+          amount: amountValue,
+          paymentMethod: recordDefaults.paymentMethod || "other",
+          paymentAccountId: recordDefaults.paymentAccountId || undefined,
+        },
+      });
+      setRecordDialogOpen(true);
+    },
+    [],
+  );
   const canDelete = user?.role === "Admin";
 
   const { data: schedules = [] } = useQuery<PaymentSchedule[]>({
@@ -264,7 +303,7 @@ export default function Dashboard() {
             >
               <LogOut className="h-4 w-4" />
             </Button>
-            <AddPaymentDialog />
+            <AddPaymentDialog onOneTimeScheduleCreated={handleOneTimeScheduleCreated} />
           </div>
         </div>
 
@@ -331,6 +370,7 @@ export default function Dashboard() {
                 <div className="text-center py-12 text-muted-foreground">
                   <p>No payment schedules found</p>
                   <AddPaymentDialog 
+                    onOneTimeScheduleCreated={handleOneTimeScheduleCreated}
                     trigger={
                       <Button variant="outline" className="mt-4" data-testid="button-add-first">
                         Add Your First Payment
@@ -359,6 +399,7 @@ export default function Dashboard() {
                       }}
                       onDelete={(id) => setDeletingScheduleId(id)}
                       onRecordPayment={(id) => {
+                        setRecordPrefill(null);
                         const s = schedules.find(sch => sch.id === id);
                         if (s) {
                           setRecordingSchedule(s);
@@ -383,6 +424,7 @@ export default function Dashboard() {
                       data-testid="button-record-payment"
                       onClick={() => {
                         setRecordingSchedule(null);
+                        setRecordPrefill(null);
                         setRecordDialogOpen(true);
                       }}
                     >
@@ -394,11 +436,13 @@ export default function Dashboard() {
                     setRecordDialogOpen(open);
                     if (!open) {
                       setRecordingSchedule(null);
+                      setRecordPrefill(null);
                     }
                   }}
                   scheduleId={recordingSchedule?.id}
-                  expenseId={recordingSchedule?.expenseId}
+                  expenseId={recordPrefill?.expenseId ?? recordingSchedule?.expenseId}
                   scheduledAmount={recordingSchedule ? parseFloat(recordingSchedule.amount) : undefined}
+                  initialValues={recordPrefill?.values}
                 />
               </div>
               <PaymentHistoryTable

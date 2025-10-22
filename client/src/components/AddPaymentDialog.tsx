@@ -11,13 +11,57 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar as CalendarIcon, Plus } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
-import type { InternalCompany, PaymentAccount, PaymentType, ExpenseType } from "@shared/schema";
+import type { InternalCompany, PaymentAccount, PaymentType, ExpenseType, PaymentSchedule } from "@shared/schema";
 
 interface AddPaymentDialogProps {
   trigger?: React.ReactNode;
+  onOneTimeScheduleCreated?: (details: {
+    schedule: PaymentSchedule;
+    recordDefaults: {
+      paymentDate: Date;
+      amount: number;
+      paymentMethod: string;
+      paymentAccountId?: string | null;
+    };
+  }) => void;
 }
 
-export default function AddPaymentDialog({ trigger }: AddPaymentDialogProps) {
+const PAYMENT_METHOD_VALUES = new Set([
+  "credit-card",
+  "debit-card",
+  "bank-transfer",
+  "cash",
+  "paypal",
+  "ach",
+  "wire",
+  "other",
+]);
+
+const mapPaymentTypeToMethod = (typeName?: string) => {
+  if (!typeName) return "other";
+  const sanitized = typeName
+    .trim()
+    .toLowerCase()
+    .replace(/[^\w\s-]/g, "")
+    .replace(/\s+/g, "-");
+
+  if (PAYMENT_METHOD_VALUES.has(sanitized)) {
+    return sanitized;
+  }
+
+  switch (sanitized) {
+    case "creditcard":
+      return "credit-card";
+    case "debitcard":
+      return "debit-card";
+    case "banktransfer":
+      return "bank-transfer";
+    default:
+      return "other";
+  }
+};
+
+export default function AddPaymentDialog({ trigger, onOneTimeScheduleCreated }: AddPaymentDialogProps) {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [internalCompanyId, setInternalCompanyId] = useState("");
@@ -46,13 +90,38 @@ export default function AddPaymentDialog({ trigger }: AddPaymentDialogProps) {
     queryKey: ["/api/expense-types"],
   });
 
-  const createMutation = useMutation({
-    mutationFn: (data: any) => apiRequest("POST", "/api/payment-schedules", data),
-    onSuccess: () => {
+  const createMutation = useMutation<PaymentSchedule, unknown, any>({
+    mutationFn: async (data: any) => {
+      const response = await apiRequest("POST", "/api/payment-schedules", data);
+      return (await response.json()) as PaymentSchedule;
+    },
+    onSuccess: (schedule, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/payment-schedules"] });
       toast({ title: "Payment schedule created successfully" });
       setOpen(false);
       resetForm();
+
+      if (
+        variables?.frequency === "one-time" &&
+        typeof variables.nextDueDate === "string" &&
+        typeof variables.amount === "string" &&
+        onOneTimeScheduleCreated
+      ) {
+        const selectedType = paymentTypes.find((type) => type.id === variables.paymentTypeId);
+        const paymentMethod = mapPaymentTypeToMethod(selectedType?.name);
+        const paymentDate = new Date(variables.nextDueDate);
+        const amountNumber = Number.parseFloat(variables.amount);
+
+        onOneTimeScheduleCreated({
+          schedule,
+          recordDefaults: {
+            paymentDate,
+            amount: Number.isFinite(amountNumber) ? amountNumber : 0,
+            paymentMethod,
+            paymentAccountId: variables.paymentAccountId || schedule.paymentAccountId || null,
+          },
+        });
+      }
     },
     onError: (error: any) => {
       toast({ 
