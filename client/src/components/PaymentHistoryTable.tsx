@@ -2,12 +2,13 @@ import { useState } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { FileText, Download, Upload } from "lucide-react";
+import { FileText, Download, Upload, FileSpreadsheet, FileDown } from "lucide-react";
 import { format } from "date-fns";
 import ManagePaymentFilesDialog from "@/components/ManagePaymentFilesDialog";
 import EditPaymentRecordDialog from "@/components/EditPaymentRecordDialog";
 import DeletePaymentRecordDialog from "@/components/DeletePaymentRecordDialog";
 import type { PaymentAccount, PaymentRecord as PaymentRecordModel } from "@shared/schema";
+import { useToast } from "@/hooks/use-toast";
 
 interface PaymentHistoryRow {
   id: string;
@@ -60,12 +61,183 @@ export default function PaymentHistoryTable({
     window.open(`/api/files/${filename}`, '_blank');
   };
 
+  const { toast } = useToast();
   const [managedPayment, setManagedPayment] = useState<PaymentHistoryRow | null>(null);
   const [manageDialogOpen, setManageDialogOpen] = useState(false);
   const [editingPayment, setEditingPayment] = useState<PaymentHistoryRow | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [deletingPayment, setDeletingPayment] = useState<PaymentHistoryRow | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+
+  const hasPayments = payments.length > 0;
+
+  const getTimingLabel = (payment: PaymentHistoryRow) => {
+    if (payment.daysLate && payment.daysLate > 0) {
+      const due = payment.scheduledDueDate ? ` (due ${format(payment.scheduledDueDate, "MMM dd, yyyy")})` : "";
+      return `${payment.daysLate} day${payment.daysLate === 1 ? "" : "s"} late${due}`;
+    }
+    if (payment.scheduledDueDate) {
+      return `On time (due ${format(payment.scheduledDueDate, "MMM dd, yyyy")})`;
+    }
+    return "On time";
+  };
+
+  const createExportRows = () =>
+    payments.map((payment) => [
+      format(payment.date, "MMM dd, yyyy"),
+      payment.company,
+      `$${payment.amount.toFixed(2)}`,
+      payment.payer,
+      methodLabels[payment.method] || payment.method,
+      payment.account || "Unassigned",
+      getTimingLabel(payment),
+      payment.hasConfirmation ? "Yes" : "No",
+      payment.hasApproval ? "Yes" : "No",
+    ]);
+
+  const handleExportCSV = () => {
+    if (!hasPayments) {
+      toast({
+        title: "No payment records to export",
+        description: "Add payment records before exporting.",
+      });
+      return;
+    }
+
+    try {
+      const headers = [
+        "Date",
+        "Company",
+        "Amount",
+        "Payer",
+        "Method",
+        "Account",
+        "Timing",
+        "Confirmation",
+        "Approval",
+      ];
+
+      const escapeCsv = (value: string) => `"${value.replace(/"/g, '""')}"`;
+      const rows = createExportRows();
+      const csvLines = [headers, ...rows].map((row) =>
+        row.map(escapeCsv).join(","),
+      );
+      const csvContent = csvLines.join("\n");
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute(
+        "download",
+        `payment-history-${format(new Date(), "yyyy-MM-dd")}.csv`,
+      );
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      toast({ title: "CSV export created" });
+    } catch (error: any) {
+      toast({
+        title: "Failed to export CSV",
+        description: error?.message || "Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleExportPDF = async () => {
+    if (!hasPayments) {
+      toast({
+        title: "No payment records to export",
+        description: "Add payment records before exporting.",
+      });
+      return;
+    }
+
+    try {
+      const [{ jsPDF }, autoTableModule] = await Promise.all([
+        import("jspdf"),
+        import("jspdf-autotable"),
+      ]);
+      const autoTable = typeof autoTableModule.default === "function"
+        ? autoTableModule.default
+        : autoTableModule;
+
+      if (typeof autoTable !== "function") {
+        throw new Error("PDF export module is unavailable.");
+      }
+
+      const doc = new jsPDF({
+        orientation: "landscape",
+        unit: "pt",
+        format: "letter",
+      });
+
+      const tableHeader = [
+        "Date",
+        "Company",
+        "Amount",
+        "Payer",
+        "Method",
+        "Account",
+        "Timing",
+        "Confirmation",
+        "Approval",
+      ];
+      const tableRows = createExportRows();
+
+      doc.setFontSize(20);
+      doc.text("Payment History", 40, 50);
+      doc.setFontSize(11);
+      doc.setTextColor(100);
+      doc.text(`Generated ${format(new Date(), "PPpp")}`, 40, 70);
+
+      autoTable(doc, {
+        head: [tableHeader],
+        body: tableRows,
+        startY: 90,
+        styles: {
+          fontSize: 10,
+          cellPadding: 6,
+          lineColor: [225, 225, 225],
+        },
+        headStyles: {
+          fillColor: [41, 70, 147],
+          textColor: 255,
+          fontSize: 11,
+          fontStyle: "bold",
+        },
+        alternateRowStyles: {
+          fillColor: [245, 247, 250],
+        },
+        columnStyles: {
+          2: { halign: "right" },
+          7: { halign: "center" },
+          8: { halign: "center" },
+        },
+        didDrawPage: () => {
+          const pageWidth = doc.internal.pageSize.getWidth();
+          const pageHeight = doc.internal.pageSize.getHeight();
+          doc.setFontSize(10);
+          doc.setTextColor(120);
+          doc.text(
+            `Page ${doc.getNumberOfPages()}`,
+            pageWidth - 80,
+            pageHeight - 20,
+          );
+        },
+      });
+
+      doc.save(`payment-history-${format(new Date(), "yyyy-MM-dd")}.pdf`);
+      toast({ title: "PDF export created" });
+    } catch (error: any) {
+      toast({
+        title: "Failed to export PDF",
+        description: error?.message || "Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
 
   const openManageDialog = (payment: PaymentHistoryRow) => {
     setManagedPayment(payment);
@@ -99,6 +271,26 @@ export default function PaymentHistoryTable({
 
   return (
     <>
+      <div className="flex justify-end gap-2 mb-4">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleExportCSV}
+          data-testid="button-export-csv"
+        >
+          <FileSpreadsheet className="mr-2 h-4 w-4" />
+          Export CSV
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => void handleExportPDF()}
+          data-testid="button-export-pdf"
+        >
+          <FileDown className="mr-2 h-4 w-4" />
+          Export PDF
+        </Button>
+      </div>
       <div className="border rounded-lg">
         <Table>
           <TableHeader>
