@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { format } from "date-fns";
+import { format, isValid } from "date-fns";
 import {
   Dialog,
   DialogContent,
@@ -54,23 +54,39 @@ export default function EditPaymentRecordDialog({
   onOpenChange,
 }: EditPaymentRecordDialogProps) {
   const { toast } = useToast();
-  const [amount, setAmount] = useState<string>(displayAmount.toFixed(2));
-  const [paymentDate, setPaymentDate] = useState<string>(format(displayDate, "yyyy-MM-dd"));
-  const [paymentMethod, setPaymentMethod] = useState<string>(payment.paymentMethod);
+  const formatAmountInput = (value: number) =>
+    typeof value === "number" && Number.isFinite(value) ? value.toFixed(2) : "";
+  const formatDateInput = (value: Date) =>
+    value instanceof Date && isValid(value) ? format(value, "yyyy-MM-dd") : "";
+  const normalizeMethod = (value: string | null | undefined) =>
+    value && PAYMENT_METHOD_OPTIONS.includes(value) ? value : "other";
+  const hasAccountOption = (value: string | null | undefined) =>
+    !!value && paymentAccounts.some((account) => account.id === value);
+  const hasApproverOption = (value: string | null | undefined) =>
+    !!value && approvers.some((user) => user.id === value);
+
+  const [amount, setAmount] = useState<string>(formatAmountInput(displayAmount));
+  const [paymentDate, setPaymentDate] = useState<string>(formatDateInput(displayDate));
+  const [paymentMethod, setPaymentMethod] = useState<string>(normalizeMethod(payment.paymentMethod));
   const [paymentAccountId, setPaymentAccountId] = useState<string>(payment.paymentAccountId ?? "");
   const [approvedBy, setApprovedBy] = useState<string>(payment.approvedBy ?? "");
   const [reason, setReason] = useState<string>("");
 
   useEffect(() => {
     if (open) {
-      setAmount(displayAmount.toFixed(2));
-      setPaymentDate(format(displayDate, "yyyy-MM-dd"));
-      setPaymentMethod(payment.paymentMethod);
+      setAmount(formatAmountInput(displayAmount));
+      setPaymentDate(formatDateInput(displayDate));
+      setPaymentMethod(normalizeMethod(payment.paymentMethod));
       setPaymentAccountId(payment.paymentAccountId ?? "");
       setApprovedBy(payment.approvedBy ?? "");
       setReason("");
     }
-  }, [open, payment, displayAmount, displayDate]);
+  }, [
+    open,
+    payment,
+    displayAmount,
+    displayDate,
+  ]);
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -188,6 +204,11 @@ export default function EditPaymentRecordDialog({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="">Unassigned</SelectItem>
+                {paymentAccountId && !hasAccountOption(paymentAccountId) && (
+                  <SelectItem value={paymentAccountId}>
+                    Unknown account ({paymentAccountId})
+                  </SelectItem>
+                )}
                 {paymentAccounts.map((account) => (
                   <SelectItem key={account.id} value={account.id}>
                     {account.name}
@@ -206,6 +227,11 @@ export default function EditPaymentRecordDialog({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="">None</SelectItem>
+                {approvedBy && !hasApproverOption(approvedBy) && (
+                  <SelectItem value={approvedBy}>
+                    Unknown approver ({approvedBy})
+                  </SelectItem>
+                )}
                 {approverOptions.map((user) => (
                   <SelectItem key={user.id} value={user.id}>
                     {user.username}
