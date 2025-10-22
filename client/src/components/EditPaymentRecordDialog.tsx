@@ -65,11 +65,14 @@ export default function EditPaymentRecordDialog({
   const hasApproverOption = (value: string | null | undefined) =>
     !!value && approvers.some((user) => user.id === value);
 
+  const UNASSIGNED_ACCOUNT_VALUE = "unassigned-account";
+  const NONE_APPROVER_VALUE = "none-approver";
+
   const [amount, setAmount] = useState<string>(formatAmountInput(displayAmount));
   const [paymentDate, setPaymentDate] = useState<string>(formatDateInput(displayDate));
   const [paymentMethod, setPaymentMethod] = useState<string>(normalizeMethod(payment.paymentMethod));
-  const [paymentAccountId, setPaymentAccountId] = useState<string>(payment.paymentAccountId ?? "");
-  const [approvedBy, setApprovedBy] = useState<string>(payment.approvedBy ?? "");
+  const [paymentAccountId, setPaymentAccountId] = useState<string>(payment.paymentAccountId ?? UNASSIGNED_ACCOUNT_VALUE);
+  const [approvedBy, setApprovedBy] = useState<string>(payment.approvedBy ?? NONE_APPROVER_VALUE);
   const [reason, setReason] = useState<string>("");
 
   useEffect(() => {
@@ -77,8 +80,8 @@ export default function EditPaymentRecordDialog({
       setAmount(formatAmountInput(displayAmount));
       setPaymentDate(formatDateInput(displayDate));
       setPaymentMethod(normalizeMethod(payment.paymentMethod));
-      setPaymentAccountId(payment.paymentAccountId ?? "");
-      setApprovedBy(payment.approvedBy ?? "");
+      setPaymentAccountId(payment.paymentAccountId ?? UNASSIGNED_ACCOUNT_VALUE);
+      setApprovedBy(payment.approvedBy ?? NONE_APPROVER_VALUE);
       setReason("");
     }
   }, [
@@ -109,8 +112,8 @@ export default function EditPaymentRecordDialog({
         amount: numericAmount.toFixed(2),
         paymentDate: new Date(paymentDate).toISOString(),
         paymentMethod,
-        paymentAccountId: paymentAccountId || null,
-        approvedBy: approvedBy || null,
+        paymentAccountId: paymentAccountId === UNASSIGNED_ACCOUNT_VALUE ? null : paymentAccountId,
+        approvedBy: approvedBy === NONE_APPROVER_VALUE ? null : approvedBy,
       };
 
       const response = await fetch(`/api/payment-records/${payment.id}`, {
@@ -195,16 +198,13 @@ export default function EditPaymentRecordDialog({
 
           <div className="space-y-2">
             <Label>Payment Account</Label>
-            <Select
-              value={paymentAccountId}
-              onValueChange={setPaymentAccountId}
-            >
+            <Select value={paymentAccountId} onValueChange={setPaymentAccountId}>
               <SelectTrigger>
                 <SelectValue placeholder="Select account" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Unassigned</SelectItem>
-                {paymentAccountId && !hasAccountOption(paymentAccountId) && (
+                <SelectItem value={UNASSIGNED_ACCOUNT_VALUE}>Unassigned</SelectItem>
+                {paymentAccountId !== UNASSIGNED_ACCOUNT_VALUE && paymentAccountId && !hasAccountOption(paymentAccountId) && (
                   <SelectItem value={paymentAccountId}>
                     Unknown account ({paymentAccountId})
                   </SelectItem>
@@ -226,8 +226,8 @@ export default function EditPaymentRecordDialog({
                 <SelectValue placeholder="Select approver" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">None</SelectItem>
-                {approvedBy && !hasApproverOption(approvedBy) && (
+                <SelectItem value={NONE_APPROVER_VALUE}>None</SelectItem>
+                {approvedBy !== NONE_APPROVER_VALUE && approvedBy && !hasApproverOption(approvedBy) && (
                   <SelectItem value={approvedBy}>
                     Unknown approver ({approvedBy})
                   </SelectItem>
