@@ -18,16 +18,60 @@ export type InsertInternalCompany = z.infer<typeof insertInternalCompanySchema>;
 export type InternalCompany = typeof internalCompanies.$inferSelect;
 
 // Payment Accounts
+export const accountBanks = pgTable("account_banks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull().unique(),
+  nickname: text("nickname").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertAccountBankSchema = createInsertSchema(accountBanks).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertAccountBank = z.infer<typeof insertAccountBankSchema>;
+export type AccountBank = typeof accountBanks.$inferSelect;
+
+export const ACCOUNT_TYPE_CODES = ["CK", "SV", "CC", "LN", "OT"] as const;
+
+export const ACCOUNT_TYPE_OPTIONS = [
+  { code: "CK", label: "Checking" },
+  { code: "SV", label: "Savings" },
+  { code: "CC", label: "Credit Card" },
+  { code: "LN", label: "Loan" },
+  { code: "OT", label: "Other" },
+] as const;
+
+export type AccountTypeCode = typeof ACCOUNT_TYPE_CODES[number];
+
 export const paymentAccounts = pgTable("payment_accounts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
   accountType: text("account_type").notNull(),
+  accountTypeCode: text("account_type_code").notNull(),
+  internalCompanyId: varchar("internal_company_id").notNull(),
+  bankId: varchar("bank_id").notNull(),
   lastFourDigits: text("last_four_digits"),
 });
 
-export const insertPaymentAccountSchema = createInsertSchema(paymentAccounts).omit({
-  id: true,
-});
+const accountTypeCodeSchema = z.enum(ACCOUNT_TYPE_CODES);
+
+export const insertPaymentAccountSchema = createInsertSchema(paymentAccounts)
+  .omit({
+    id: true,
+    name: true,
+    accountType: true,
+  })
+  .extend({
+    accountTypeCode: accountTypeCodeSchema,
+    lastFourDigits: z
+      .string()
+      .trim()
+      .regex(/^\d{4}$/, "Must be 4 digits")
+      .optional()
+      .nullable(),
+  });
 
 export type InsertPaymentAccount = z.infer<typeof insertPaymentAccountSchema>;
 export type PaymentAccount = typeof paymentAccounts.$inferSelect;

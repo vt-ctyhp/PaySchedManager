@@ -5,11 +5,13 @@ import {
   eq,
   like,
   desc,
+  asc,
 } from "drizzle-orm";
 import {
   users,
   internalCompanies,
   paymentAccounts,
+  accountBanks,
   paymentTypes,
   expenseTypes,
   paymentSchedules,
@@ -19,6 +21,7 @@ import {
   insertUserSchema,
   insertInternalCompanySchema,
   insertPaymentAccountSchema,
+  insertAccountBankSchema,
   insertPaymentTypeSchema,
   insertExpenseTypeSchema,
   insertPaymentScheduleSchema,
@@ -30,6 +33,8 @@ import {
   type InternalCompany,
   type InsertInternalCompany,
   type PaymentAccount,
+  type AccountBank,
+  type InsertAccountBank,
   type InsertPaymentAccount,
   type PaymentType,
   type InsertPaymentType,
@@ -43,12 +48,42 @@ import {
   type InsertAccountMapping,
   type PaymentRecordAudit,
   type InsertPaymentRecordAudit,
+  ACCOUNT_TYPE_OPTIONS,
+  type AccountTypeCode,
 } from "@shared/schema";
 import * as schema from "@shared/schema";
 
 type ScheduleFrequency = PaymentSchedule["frequency"];
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
+
+const ACCOUNT_TYPE_LOOKUP: Record<AccountTypeCode, string> = ACCOUNT_TYPE_OPTIONS.reduce(
+  (acc, option) => ({ ...acc, [option.code]: option.label }),
+  {} as Record<AccountTypeCode, string>
+);
+
+function getAccountTypeLabel(code: AccountTypeCode): string {
+  return ACCOUNT_TYPE_LOOKUP[code] ?? code;
+}
+
+function generateAccountName(params: {
+  companyAbbreviation: string;
+  bankNickname: string;
+  accountTypeCode: AccountTypeCode;
+  lastFourDigits?: string | null;
+}): string {
+  const parts = [
+    params.companyAbbreviation.trim(),
+    params.bankNickname.trim(),
+    params.accountTypeCode.trim(),
+  ].filter(Boolean);
+
+  if (params.lastFourDigits) {
+    parts.push(params.lastFourDigits.trim());
+  }
+
+  return parts.join(" ").replace(/\s+/g, " ").trim();
+}
 
 function addFrequencyInterval(date: Date, frequency: ScheduleFrequency): Date | null {
   const next = new Date(date.getTime());
@@ -144,6 +179,9 @@ export interface IStorage {
   // Payment Accounts
   getAllPaymentAccounts(): Promise<PaymentAccount[]>;
   getPaymentAccount(id: string): Promise<PaymentAccount | undefined>;
+  getAllAccountBanks(): Promise<AccountBank[]>;
+  getAccountBank(id: string): Promise<AccountBank | undefined>;
+  createAccountBank(bank: InsertAccountBank): Promise<AccountBank>;
   createPaymentAccount(account: InsertPaymentAccount): Promise<PaymentAccount>;
   updatePaymentAccount(id: string, account: Partial<InsertPaymentAccount>): Promise<PaymentAccount | undefined>;
   deletePaymentAccount(id: string): Promise<boolean>;
@@ -210,6 +248,7 @@ export class MemStorage implements IStorage {
   private users: Map<string, User>;
   private internalCompanies: Map<string, InternalCompany>;
   private paymentAccounts: Map<string, PaymentAccount>;
+  private accountBanks: Map<string, AccountBank>;
   private paymentTypes: Map<string, PaymentType>;
   private expenseTypes: Map<string, ExpenseType>;
   private paymentSchedules: Map<string, PaymentSchedule>;
@@ -221,6 +260,7 @@ export class MemStorage implements IStorage {
     this.users = new Map();
     this.internalCompanies = new Map();
     this.paymentAccounts = new Map();
+    this.accountBanks = new Map();
     this.paymentTypes = new Map();
     this.expenseTypes = new Map();
     this.paymentSchedules = new Map();
@@ -266,6 +306,23 @@ export class MemStorage implements IStorage {
       paymentTypesData.forEach((name) => {
         const id = randomUUID();
         this.paymentTypes.set(id, { id, name });
+      });
+    }
+
+    if (this.accountBanks.size === 0) {
+      const banks = [
+        { name: "Bank of America", nickname: "BoA" },
+        { name: "Chase Bank", nickname: "Chase" },
+        { name: "Wells Fargo", nickname: "Wells" },
+      ];
+      banks.forEach((bank) => {
+        const id = randomUUID();
+        this.accountBanks.set(id, {
+          id,
+          name: bank.name,
+          nickname: bank.nickname,
+          createdAt: new Date(),
+        });
       });
     }
 
@@ -345,16 +402,58 @@ export class MemStorage implements IStorage {
     return Array.from(this.paymentAccounts.values());
   }
 
+  async getAllAccountBanks(): Promise<AccountBank[]> {
+    return Array.from(this.accountBanks.values());
+  }
+
+  async getAccountBank(id: string): Promise<AccountBank | undefined> {
+    return this.accountBanks.get(id);
+  }
+
+  async createAccountBank(bank: InsertAccountBank): Promise<AccountBank> {
+    const id = randomUUID();
+    const record: AccountBank = {
+      id,
+      ...bank,
+      createdAt: new Date(),
+    };
+    this.accountBanks.set(id, record);
+    return record;
+  }
+
   async getPaymentAccount(id: string): Promise<PaymentAccount | undefined> {
     return this.paymentAccounts.get(id);
   }
 
   async createPaymentAccount(account: InsertPaymentAccount): Promise<PaymentAccount> {
+    const company = this.internalCompanies.get(account.internalCompanyId);
+    if (!company) {
+      throw new Error("Internal company not found");
+    }
+
+    const bank = this.accountBanks.get(account.bankId);
+    if (!bank) {
+      throw new Error("Bank not found");
+    }
+
+    const accountTypeLabel = getAccountTypeLabel(account.accountTypeCode as AccountTypeCode);
+    const lastFour = account.lastFourDigits?.trim() || null;
+    const name = generateAccountName({
+      companyAbbreviation: company.abbreviation,
+      bankNickname: bank.nickname,
+      accountTypeCode: account.accountTypeCode as AccountTypeCode,
+      lastFourDigits: lastFour ?? undefined,
+    });
+
     const id = randomUUID();
     const newAccount: PaymentAccount = {
       id,
-      ...account,
-      lastFourDigits: account.lastFourDigits ?? null,
+      name,
+      accountType: accountTypeLabel,
+      accountTypeCode: account.accountTypeCode,
+      internalCompanyId: account.internalCompanyId,
+      bankId: account.bankId,
+      lastFourDigits: lastFour,
     };
     this.paymentAccounts.set(id, newAccount);
     return newAccount;
@@ -363,9 +462,34 @@ export class MemStorage implements IStorage {
   async updatePaymentAccount(id: string, account: Partial<InsertPaymentAccount>): Promise<PaymentAccount | undefined> {
     const existing = this.paymentAccounts.get(id);
     if (!existing) return undefined;
-    const updated = { ...existing, ...account };
-    this.paymentAccounts.set(id, updated);
-    return updated;
+
+    const merged: PaymentAccount = {
+      ...existing,
+      ...account,
+      lastFourDigits: account.lastFourDigits !== undefined ? account.lastFourDigits?.trim() || null : existing.lastFourDigits,
+    } as PaymentAccount;
+
+    const company = this.internalCompanies.get(merged.internalCompanyId);
+    if (!company) {
+      throw new Error("Internal company not found");
+    }
+
+    const bank = this.accountBanks.get(merged.bankId);
+    if (!bank) {
+      throw new Error("Bank not found");
+    }
+
+    const typeCode = merged.accountTypeCode as AccountTypeCode;
+    merged.accountType = getAccountTypeLabel(typeCode);
+    merged.name = generateAccountName({
+      companyAbbreviation: company.abbreviation,
+      bankNickname: bank.nickname,
+      accountTypeCode: typeCode,
+      lastFourDigits: merged.lastFourDigits ?? undefined,
+    });
+
+    this.paymentAccounts.set(id, merged);
+    return merged;
   }
 
   async deletePaymentAccount(id: string): Promise<boolean> {
@@ -755,22 +879,102 @@ export class PgStorage implements IStorage {
     return await this.db.select().from(paymentAccounts);
   }
 
+  async getAllAccountBanks(): Promise<AccountBank[]> {
+    return await this.db.select().from(accountBanks).orderBy(asc(accountBanks.name));
+  }
+
+  async getAccountBank(id: string): Promise<AccountBank | undefined> {
+    return (
+      (await this.db.query.accountBanks.findFirst({ where: eq(accountBanks.id, id) })) || undefined
+    );
+  }
+
+  async createAccountBank(bank: InsertAccountBank): Promise<AccountBank> {
+    const [created] = await this.db.insert(accountBanks).values(bank).returning();
+    return created;
+  }
+
   async getPaymentAccount(id: string): Promise<PaymentAccount | undefined> {
     return await this.db.query.paymentAccounts.findFirst({ where: eq(paymentAccounts.id, id) }) || undefined;
   }
 
   async createPaymentAccount(account: InsertPaymentAccount): Promise<PaymentAccount> {
+    const company = await this.getInternalCompany(account.internalCompanyId);
+    if (!company) {
+      throw new Error("Internal company not found");
+    }
+    const bank = await this.getAccountBank(account.bankId);
+    if (!bank) {
+      throw new Error("Bank not found");
+    }
+
+    const accountTypeLabel = getAccountTypeLabel(account.accountTypeCode as AccountTypeCode);
+    const lastFour = account.lastFourDigits?.trim() || null;
+    const name = generateAccountName({
+      companyAbbreviation: company.abbreviation,
+      bankNickname: bank.nickname,
+      accountTypeCode: account.accountTypeCode as AccountTypeCode,
+      lastFourDigits: lastFour ?? undefined,
+    });
+
     const [created] = await this.db
       .insert(paymentAccounts)
-      .values({ ...account, lastFourDigits: account.lastFourDigits ?? null })
+      .values({
+        name,
+        accountType: accountTypeLabel,
+        accountTypeCode: account.accountTypeCode,
+        internalCompanyId: account.internalCompanyId,
+        bankId: account.bankId,
+        lastFourDigits: lastFour,
+      })
       .returning();
     return created;
   }
 
   async updatePaymentAccount(id: string, account: Partial<InsertPaymentAccount>): Promise<PaymentAccount | undefined> {
+    const existing = await this.getPaymentAccount(id);
+    if (!existing) {
+      return undefined;
+    }
+
+    const merged: InsertPaymentAccount = {
+      accountTypeCode: (account.accountTypeCode ?? existing.accountTypeCode) as AccountTypeCode,
+      internalCompanyId: account.internalCompanyId ?? existing.internalCompanyId,
+      bankId: account.bankId ?? existing.bankId,
+      lastFourDigits:
+        account.lastFourDigits !== undefined
+          ? account.lastFourDigits?.trim() || null
+          : existing.lastFourDigits,
+    } as InsertPaymentAccount;
+
+    const company = await this.getInternalCompany(merged.internalCompanyId);
+    if (!company) {
+      throw new Error("Internal company not found");
+    }
+
+    const bank = await this.getAccountBank(merged.bankId);
+    if (!bank) {
+      throw new Error("Bank not found");
+    }
+
+    const accountTypeLabel = getAccountTypeLabel(merged.accountTypeCode as AccountTypeCode);
+    const name = generateAccountName({
+      companyAbbreviation: company.abbreviation,
+      bankNickname: bank.nickname,
+      accountTypeCode: merged.accountTypeCode as AccountTypeCode,
+      lastFourDigits: merged.lastFourDigits ?? undefined,
+    });
+
     const [updated] = await this.db
       .update(paymentAccounts)
-      .set(account)
+      .set({
+        name,
+        accountType: accountTypeLabel,
+        accountTypeCode: merged.accountTypeCode,
+        internalCompanyId: merged.internalCompanyId,
+        bankId: merged.bankId,
+        lastFourDigits: merged.lastFourDigits ?? null,
+      })
       .where(eq(paymentAccounts.id, id))
       .returning();
     return updated ?? undefined;

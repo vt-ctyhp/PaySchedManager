@@ -32,7 +32,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import type { InternalCompany, PaymentAccount, PaymentType, ExpenseType, User, AccountMapping } from "@shared/schema";
+import type { InternalCompany, PaymentAccount, PaymentType, ExpenseType, User, AccountMapping, AccountBank } from "@shared/schema";
+import { ACCOUNT_TYPE_OPTIONS } from "@shared/schema";
 
 export default function Settings() {
   const { user } = useAuth();
@@ -219,32 +220,66 @@ function InternalCompaniesManager() {
 function PaymentAccountsManager() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [open, setOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [accountType, setAccountType] = useState("");
-  const [lastFourDigits, setLastFourDigits] = useState("");
   const canDelete = user?.role === "Admin";
 
-  const { data: accounts = [], isLoading } = useQuery<PaymentAccount[]>({
+  const [open, setOpen] = useState(false);
+  const [newBankOpen, setNewBankOpen] = useState(false);
+  const [internalCompanyId, setInternalCompanyId] = useState("");
+  const [bankId, setBankId] = useState("");
+  const [accountTypeCode, setAccountTypeCode] = useState("");
+  const [lastFourDigits, setLastFourDigits] = useState("");
+  const [newBankName, setNewBankName] = useState("");
+  const [newBankNickname, setNewBankNickname] = useState("");
+
+  const { data: accounts = [], isLoading: accountsLoading } = useQuery<PaymentAccount[]>({
     queryKey: ["/api/payment-accounts"],
   });
 
+  const { data: companies = [] } = useQuery<InternalCompany[]>({
+    queryKey: ["/api/internal-companies"],
+  });
+
+  const { data: banks = [] } = useQuery<AccountBank[]>({
+    queryKey: ["/api/account-banks"],
+  });
+
+  const createBankMutation = useMutation({
+    mutationFn: (data: { name: string; nickname: string }) =>
+      apiRequest("POST", "/api/account-banks", data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/account-banks"] });
+      toast({ title: "Bank added successfully" });
+      setNewBankOpen(false);
+      setNewBankName("");
+      setNewBankNickname("");
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to add bank",
+        description: error.message || "Please try again",
+        variant: "destructive",
+      });
+    },
+  });
+
   const createMutation = useMutation({
-    mutationFn: (data: { name: string; accountType: string; lastFourDigits?: string }) =>
-      apiRequest("POST", "/api/payment-accounts", data),
+    mutationFn: (data: {
+      internalCompanyId: string;
+      bankId: string;
+      accountTypeCode: string;
+      lastFourDigits: string | null;
+    }) => apiRequest("POST", "/api/payment-accounts", data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/payment-accounts"] });
       toast({ title: "Payment account added successfully" });
+      resetForm();
       setOpen(false);
-      setName("");
-      setAccountType("");
-      setLastFourDigits("");
     },
     onError: (error: any) => {
-      toast({ 
-        title: "Failed to add payment account", 
+      toast({
+        title: "Failed to add payment account",
         description: error.message || "Please try again",
-        variant: "destructive" 
+        variant: "destructive",
       });
     },
   });
@@ -257,68 +292,210 @@ function PaymentAccountsManager() {
     },
   });
 
-  const handleSubmit = () => {
-    if (!name || !accountType) {
-      toast({ title: "Please fill in all required fields", variant: "destructive" });
+  const selectedCompany = companies.find((company) => company.id === internalCompanyId);
+  const selectedBank = banks.find((bank) => bank.id === bankId);
+  const selectedAccountType = ACCOUNT_TYPE_OPTIONS.find((option) => option.code === accountTypeCode);
+
+  const accountPreview = [
+    selectedCompany?.abbreviation,
+    selectedBank?.nickname,
+    selectedAccountType?.code,
+    lastFourDigits ? lastFourDigits.trim() : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const resetForm = () => {
+    setInternalCompanyId("");
+    setBankId("");
+    setAccountTypeCode("");
+    setLastFourDigits("");
+  };
+
+  const handleAddBank = () => {
+    if (!newBankName.trim() || !newBankNickname.trim()) {
+      toast({ title: "Please provide both bank name and nickname", variant: "destructive" });
       return;
     }
-    createMutation.mutate({ name, accountType, lastFourDigits: lastFourDigits || undefined });
+
+    createBankMutation.mutate({
+      name: newBankName.trim(),
+      nickname: newBankNickname.trim(),
+    });
+  };
+
+  const handleSubmit = () => {
+    if (!internalCompanyId || !bankId || !accountTypeCode) {
+      toast({ title: "Select company, bank, and account type", variant: "destructive" });
+      return;
+    }
+
+    if (lastFourDigits && !/^\d{4}$/.test(lastFourDigits)) {
+      toast({ title: "Last 4 digits must be exactly 4 numbers", variant: "destructive" });
+      return;
+    }
+
+    createMutation.mutate({
+      internalCompanyId,
+      bankId,
+      accountTypeCode,
+      lastFourDigits: lastFourDigits ? lastFourDigits.trim() : null,
+    });
   };
 
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
         <CardTitle>Payment Accounts</CardTitle>
-        <Dialog open={open} onOpenChange={setOpen}>
+        <Dialog open={open} onOpenChange={(value) => {
+          setOpen(value);
+          if (!value) {
+            resetForm();
+          }
+        }}>
           <DialogTrigger asChild>
             <Button data-testid="button-add-account">
               <Plus className="h-4 w-4 mr-2" />
               Add Account
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="max-w-lg">
             <DialogHeader>
               <DialogTitle>Add Payment Account</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="account-name">Account Name</Label>
-                <Input
-                  id="account-name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g., Chase Business Card"
-                  data-testid="input-account-name"
-                  required
-                />
+                <Label htmlFor="account-company">Internal Company</Label>
+                <Select value={internalCompanyId} onValueChange={setInternalCompanyId}>
+                  <SelectTrigger id="account-company" data-testid="select-account-company">
+                    <SelectValue placeholder="Select company" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {companies.map((company) => (
+                      <SelectItem key={company.id} value={company.id}>
+                        {company.name} ({company.abbreviation})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="account-bank">Bank</Label>
+                  <Dialog open={newBankOpen} onOpenChange={setNewBankOpen}>
+                    <DialogTrigger asChild>
+                      <Button variant="ghost" size="sm" className="px-2" data-testid="button-add-bank">
+                        <Plus className="h-3.5 w-3.5 mr-1" /> Add bank
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="max-w-sm">
+                      <DialogHeader>
+                        <DialogTitle>Add Bank</DialogTitle>
+                      </DialogHeader>
+                      <div className="space-y-3">
+                        <div className="space-y-2">
+                          <Label htmlFor="new-bank-name">Bank Name</Label>
+                          <Input
+                            id="new-bank-name"
+                            value={newBankName}
+                            onChange={(event) => setNewBankName(event.target.value)}
+                            placeholder="e.g., Bank of America"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="new-bank-nickname">Nickname</Label>
+                          <Input
+                            id="new-bank-nickname"
+                            value={newBankNickname}
+                            onChange={(event) => setNewBankNickname(event.target.value)}
+                            placeholder="e.g., BoA"
+                          />
+                        </div>
+                        <div className="flex gap-2">
+                          <Button type="button" variant="outline" className="flex-1" onClick={() => setNewBankOpen(false)}>
+                            Cancel
+                          </Button>
+                          <Button
+                            type="button"
+                            className="flex-1"
+                            onClick={handleAddBank}
+                            disabled={createBankMutation.isPending}
+                          >
+                            {createBankMutation.isPending ? "Saving..." : "Save"}
+                          </Button>
+                        </div>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+                <Select value={bankId} onValueChange={setBankId}>
+                  <SelectTrigger id="account-bank" data-testid="select-account-bank">
+                    <SelectValue placeholder="Select bank" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {banks.map((bank) => (
+                      <SelectItem key={bank.id} value={bank.id}>
+                        {bank.name} ({bank.nickname})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
               <div className="space-y-2">
                 <Label htmlFor="account-type">Account Type</Label>
-                <Input
-                  id="account-type"
-                  value={accountType}
-                  onChange={(e) => setAccountType(e.target.value)}
-                  placeholder="e.g., Credit Card, Bank Account"
-                  data-testid="input-account-type"
-                  required
-                />
+                <Select value={accountTypeCode} onValueChange={setAccountTypeCode}>
+                  <SelectTrigger id="account-type" data-testid="select-account-type">
+                    <SelectValue placeholder="Select account type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ACCOUNT_TYPE_OPTIONS.map((option) => (
+                      <SelectItem key={option.code} value={option.code}>
+                        {option.label} ({option.code})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
+
               <div className="space-y-2">
-                <Label htmlFor="last-four">Last 4 Digits (Optional)</Label>
+                <Label htmlFor="account-last-four">Last 4 Digits (optional)</Label>
                 <Input
-                  id="last-four"
+                  id="account-last-four"
                   value={lastFourDigits}
-                  onChange={(e) => setLastFourDigits(e.target.value)}
-                  placeholder="e.g., 1234"
-                  maxLength={4}
-                  data-testid="input-last-four"
+                  onChange={(event) => setLastFourDigits(event.target.value.replace(/[^0-9]/g, "").slice(0, 4))}
+                  placeholder="e.g., 9876"
+                  inputMode="numeric"
+                  data-testid="input-account-last-four"
                 />
               </div>
+
+              <div className="space-y-1">
+                <Label>Generated Name</Label>
+                <Input value={accountPreview || "Select company, bank, and type"} readOnly />
+              </div>
+
               <div className="flex gap-2">
-                <Button type="button" variant="outline" onClick={() => setOpen(false)} className="flex-1" data-testid="button-cancel-account">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setOpen(false);
+                    resetForm();
+                  }}
+                  className="flex-1"
+                  data-testid="button-cancel-account"
+                >
                   Cancel
                 </Button>
-                <Button type="button" onClick={handleSubmit} className="flex-1" data-testid="button-save-account" disabled={createMutation.isPending}>
+                <Button
+                  type="button"
+                  onClick={handleSubmit}
+                  className="flex-1"
+                  data-testid="button-save-account"
+                  disabled={createMutation.isPending}
+                >
                   {createMutation.isPending ? "Adding..." : "Add Account"}
                 </Button>
               </div>
@@ -327,38 +504,48 @@ function PaymentAccountsManager() {
         </Dialog>
       </CardHeader>
       <CardContent>
-        {isLoading ? (
+        {accountsLoading ? (
           <p className="text-sm text-muted-foreground">Loading...</p>
         ) : (
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Account Name</TableHead>
+                <TableHead>Company</TableHead>
+                <TableHead>Bank</TableHead>
                 <TableHead>Type</TableHead>
-                <TableHead>Last 4 Digits</TableHead>
+                <TableHead>Last 4</TableHead>
                 <TableHead className="w-20"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {accounts.map((account) => (
-                <TableRow key={account.id}>
-                  <TableCell data-testid={`text-account-${account.id}`}>{account.name}</TableCell>
-                  <TableCell>{account.accountType}</TableCell>
-                  <TableCell className="font-mono">{account.lastFourDigits || "—"}</TableCell>
-                  <TableCell>
-                    {canDelete && (
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        onClick={() => deleteMutation.mutate(account.id)}
-                        data-testid={`button-delete-account-${account.id}`}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
+              {accounts.map((account) => {
+                const company = companies.find((item) => item.id === account.internalCompanyId);
+                const bank = banks.find((item) => item.id === account.bankId);
+                return (
+                  <TableRow key={account.id}>
+                    <TableCell data-testid={`text-account-${account.id}`}>{account.name}</TableCell>
+                    <TableCell>{company ? `${company.name} (${company.abbreviation})` : "—"}</TableCell>
+                    <TableCell>{bank ? `${bank.name} (${bank.nickname})` : "—"}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{account.accountType}</Badge>
+                    </TableCell>
+                    <TableCell className="font-mono">{account.lastFourDigits || "—"}</TableCell>
+                    <TableCell>
+                      {canDelete && (
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => deleteMutation.mutate(account.id)}
+                          data-testid={`button-delete-account-${account.id}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         )}

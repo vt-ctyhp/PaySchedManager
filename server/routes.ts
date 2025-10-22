@@ -5,6 +5,7 @@ import { z } from "zod";
 import {
   insertInternalCompanySchema,
   insertPaymentAccountSchema,
+  insertAccountBankSchema,
   insertPaymentTypeSchema,
   insertExpenseTypeSchema,
   insertPaymentScheduleSchema,
@@ -244,6 +245,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ message: "Failed to delete company" });
+    }
+  });
+
+  // Account Banks
+  app.get("/api/account-banks", requireAuth, async (_req, res) => {
+    try {
+      const banks = await storage.getAllAccountBanks();
+      res.json(banks);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch banks" });
+    }
+  });
+
+  app.post("/api/account-banks", requireAuth, async (req, res) => {
+    try {
+      const data = insertAccountBankSchema.parse(req.body);
+      const bank = await storage.createAccountBank(data);
+      res.status(201).json(bank);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message || "Invalid data" });
     }
   });
 

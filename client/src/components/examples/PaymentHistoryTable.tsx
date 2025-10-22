@@ -3,8 +3,11 @@ import type { PaymentRecord as PaymentRecordModel, PaymentAccount } from "@share
 
 const mockAccount: PaymentAccount = {
   id: "account-1",
-  name: "Chase Business Card",
+  name: "TFJ Chase CC 1234",
   accountType: "Credit Card",
+  accountTypeCode: "CC",
+  internalCompanyId: "company-1",
+  bankId: "bank-1",
   lastFourDigits: "1234",
 };
 
