@@ -592,6 +592,7 @@ export class MemStorage implements IStorage {
       createdAt: new Date(),
       status: schedule.status ?? "scheduled",
       ...schedule,
+      isActive: schedule.isActive ?? true,
     };
     this.paymentSchedules.set(id, newSchedule);
     return newSchedule;

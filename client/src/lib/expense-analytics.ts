@@ -82,8 +82,14 @@ export function isRecurring(frequency: string): boolean {
   return frequency !== "one-time" && frequency in MONTHLY_FACTOR;
 }
 
-export function isActive(schedule: Pick<PaymentSchedule, "status">): boolean {
-  return schedule.status !== "completed";
+/**
+ * An expense schedule counts as an active obligation when it has not been
+ * marked completed and has not been cancelled (`isActive === false`).
+ */
+export function isActive(
+  schedule: Pick<PaymentSchedule, "status"> & { isActive?: boolean | null },
+): boolean {
+  return schedule.status !== "completed" && schedule.isActive !== false;
 }
 
 /** Advance a date by a single interval of the given frequency. */

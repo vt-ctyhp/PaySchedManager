@@ -1,5 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { LucideIcon } from "lucide-react";
+import { LucideIcon, ChevronRight } from "lucide-react";
 
 interface QuickStatsCardProps {
   title: string;
@@ -10,6 +10,7 @@ interface QuickStatsCardProps {
     value: number;
     isPositive: boolean;
   };
+  onClick?: () => void;
 }
 
 export default function QuickStatsCard({
@@ -17,9 +18,31 @@ export default function QuickStatsCard({
   value,
   icon: Icon,
   description,
+  onClick,
 }: QuickStatsCardProps) {
+  const clickable = !!onClick;
   return (
-    <Card>
+    <Card
+      onClick={onClick}
+      role={clickable ? "button" : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      onKeyDown={
+        clickable
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onClick?.();
+              }
+            }
+          : undefined
+      }
+      className={
+        clickable
+          ? "cursor-pointer hover-elevate focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          : undefined
+      }
+      data-testid={`statcard-${title.toLowerCase().replace(/\s+/g, "-")}`}
+    >
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
         <CardTitle className="text-sm font-medium text-muted-foreground">
           {title}
@@ -31,7 +54,15 @@ export default function QuickStatsCard({
           {value}
         </div>
         {description && (
-          <p className="text-xs text-muted-foreground mt-1">{description}</p>
+          <div className="mt-1 flex items-center justify-between gap-2">
+            <p className="text-xs text-muted-foreground">{description}</p>
+            {clickable && (
+              <span className="flex items-center gap-0.5 text-xs text-muted-foreground">
+                View
+                <ChevronRight className="h-3 w-3" />
+              </span>
+            )}
+          </div>
         )}
       </CardContent>
     </Card>

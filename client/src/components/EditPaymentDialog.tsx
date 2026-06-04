@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as CalendarIcon } from "lucide-react";
@@ -30,6 +31,7 @@ export default function EditPaymentDialog({ schedule, open, onOpenChange }: Edit
   const [paymentTypeId, setPaymentTypeId] = useState("");
   const [paymentAccountId, setPaymentAccountId] = useState("");
   const [expenseTypeId, setExpenseTypeId] = useState("");
+  const [isActive, setIsActive] = useState(true);
 
   const { data: companies = [] } = useQuery<InternalCompany[]>({
     queryKey: ["/api/internal-companies"],
@@ -59,6 +61,7 @@ export default function EditPaymentDialog({ schedule, open, onOpenChange }: Edit
       setPaymentTypeId(schedule.paymentTypeId);
       setPaymentAccountId(schedule.paymentAccountId);
       setExpenseTypeId(schedule.expenseTypeId);
+      setIsActive(schedule.isActive ?? true);
     }
   }, [schedule, open]);
 
@@ -96,6 +99,7 @@ export default function EditPaymentDialog({ schedule, open, onOpenChange }: Edit
       paymentTypeId,
       paymentAccountId,
       expenseTypeId,
+      isActive,
     });
   };
 
@@ -275,6 +279,23 @@ export default function EditPaymentDialog({ schedule, open, onOpenChange }: Edit
                 Future due dates will be calculated automatically based on frequency
               </p>
             )}
+          </div>
+
+          <div className="flex items-center justify-between rounded-md border p-3">
+            <div className="space-y-0.5">
+              <Label htmlFor="edit-is-active">Active schedule</Label>
+              <p className="text-xs text-muted-foreground">
+                {isActive
+                  ? "This schedule is active and counts toward forecasts and upcoming payments."
+                  : "Cancelled — hidden from forecasts, KPIs, and upcoming payments."}
+              </p>
+            </div>
+            <Switch
+              id="edit-is-active"
+              checked={isActive}
+              onCheckedChange={setIsActive}
+              data-testid="switch-edit-is-active"
+            />
           </div>
 
           <div className="flex gap-2 pt-4">

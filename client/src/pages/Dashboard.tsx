@@ -22,6 +22,14 @@ import SpendTrendChart from "@/components/dashboard/SpendTrendChart";
 import UpcomingPaymentsList, {
   type UpcomingPaymentItem,
 } from "@/components/dashboard/UpcomingPaymentsList";
+import DrillDownDialog, {
+  type DrillDownConfig,
+  type DrillEntry,
+} from "@/components/dashboard/DrillDownDialog";
+import ExpenseDetailDialog, {
+  type ExpenseDetailData,
+} from "@/components/dashboard/ExpenseDetailDialog";
+import type { BreakdownSelection } from "@/components/dashboard/ExpenseBreakdownChart";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   ToggleGroup,
@@ -50,14 +58,21 @@ import type {
   PaymentType,
   ExpenseType,
 } from "@shared/schema";
-import { differenceInDays, addDays } from "date-fns";
+import { differenceInDays, addDays, addMonths, isSameMonth, format } from "date-fns";
 import {
   monthlyRunRate,
   monthlyForecast,
   monthlySpendTrend,
   breakdownBy,
+  projectOccurrences,
   parseAmount,
+  formatCurrency,
   formatCurrencyWhole,
+  FREQUENCY_LABELS,
+  MONTHLY_FACTOR,
+  isRecurring,
+  type ForecastBucket,
+  type TrendPoint,
 } from "@/lib/expense-analytics";
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
@@ -79,6 +94,8 @@ export default function Dashboard() {
     values: RecordPaymentInitialValues;
     expenseId?: string;
   } | null>(null);
+  const [drillDown, setDrillDown] = useState<DrillDownConfig | null>(null);
+  const [detail, setDetail] = useState<ExpenseDetailData | null>(null);
 
   // Stable "now" so memoised analytics don't shift on every render.
   const now = useMemo(() => new Date(), []);
@@ -344,7 +361,7 @@ export default function Dashboard() {
   const upcomingItems: UpcomingPaymentItem[] = useMemo(() => {
     const horizon = addDays(now, UPCOMING_HORIZON_DAYS);
     return enrichedSchedules
-      .filter((s) => s.status !== "paid")
+      .filter((s) => s.status !== "paid" && s.isActive !== false)
       .map((s) => ({
         id: s.id,
         vendorName: s.vendorName,
@@ -361,13 +378,16 @@ export default function Dashboard() {
   }, [enrichedSchedules, now]);
 
   // ---- KPI figures ----
-  const overdueSchedules = enrichedSchedules.filter((s) => s.status === "overdue");
+  const overdueSchedules = enrichedSchedules.filter(
+    (s) => s.status === "overdue" && s.isActive !== false,
+  );
   const overdueAmount = overdueSchedules.reduce((sum, s) => sum + parseAmount(s.amount), 0);
 
   const dueNext30 = useMemo(() => {
     const horizon = addDays(now, 30);
     const items = enrichedSchedules.filter((s) => {
       if (s.status === "paid" || s.status === "overdue") return false;
+      if (s.isActive === false) return false;
       const due = new Date(s.nextDueDate);
       return due >= now && due <= horizon;
     });
@@ -400,6 +420,281 @@ export default function Dashboard() {
     },
     [schedules],
   );
+
+  // ---- Drill-down helpers ----
+  const scheduleToEntry = useCallback(
+    (
+      s: (typeof enrichedSchedules)[number],
+      date?: Date,
+      amountOverride?: number,
+    ): DrillEntry => ({
+      id: date ? `${s.id}-${date.getTime()}` : s.id,
+      scheduleId: s.id,
+      vendor: s.vendorName,
+      company: s.company?.name ?? "—",
+      expenseType: s.expenseType?.name ?? "Uncategorized",
+      account: accountLabel(s.paymentAccountId),
+      amount: amountOverride ?? parseAmount(s.amount),
+      date: date ?? new Date(s.nextDueDate),
+      status: s.status,
+    }),
+    [accountLabel],
+  );
+
+  const recordToEntry = useCallback(
+    (r: (typeof enrichedRecords)[number]): DrillEntry => {
+      const rec = r.rawRecord;
+      const schedule =
+        schedules.find((s) => s.id === rec.paymentScheduleId) ??
+        schedules.find((s) => s.expenseId === rec.expenseId);
+      const company =
+        getCompanyById(rec.internalCompanyId)?.name ??
+        (schedule ? getCompanyById(schedule.internalCompanyId)?.name : undefined) ??
+        "—";
+      const expenseType = schedule
+        ? getExpenseTypeById(schedule.expenseTypeId)?.name ?? "—"
+        : "—";
+      return {
+        id: r.id,
+        recordId: r.id,
+        vendor: schedule?.vendorName ?? rec.expenseId,
+        company,
+        expenseType,
+        account:
+          r.account ??
+          (rec.paymentAccountId ? accountLabel(rec.paymentAccountId) : "—"),
+        amount: r.amount,
+        date: r.date,
+      };
+    },
+    [schedules, getCompanyById, getExpenseTypeById, accountLabel],
+  );
+
+  // ---- KPI drill-downs ----
+  const handleRunRateDrill = () => {
+    const entries = enrichedSchedules
+      .filter((s) => s.status !== "paid" && s.isActive !== false && isRecurring(s.frequency))
+      .map((s) =>
+        scheduleToEntry(
+          s,
+          new Date(s.nextDueDate),
+          parseAmount(s.amount) * (MONTHLY_FACTOR[s.frequency] ?? 0),
+        ),
+      )
+      .sort((a, b) => b.amount - a.amount);
+    setDrillDown({
+      title: "Monthly run-rate",
+      description: "Recurring schedules, each normalized to a monthly amount",
+      dateLabel: "Next due",
+      entries,
+    });
+  };
+
+  const handleDueSoonDrill = () => {
+    const horizon = addDays(now, 30);
+    const entries = enrichedSchedules
+      .filter((s) => {
+        if (s.status === "paid" || s.status === "overdue") return false;
+        const due = new Date(s.nextDueDate);
+        return due >= now && due <= horizon;
+      })
+      .map((s) => scheduleToEntry(s))
+      .sort((a, b) => (a.date?.getTime() ?? 0) - (b.date?.getTime() ?? 0));
+    setDrillDown({
+      title: "Due in the next 30 days",
+      description: "Scheduled payments coming due within 30 days",
+      dateLabel: "Due date",
+      entries,
+    });
+  };
+
+  const handleOverdueDrill = () => {
+    const entries = enrichedSchedules
+      .filter((s) => s.status === "overdue" && s.isActive !== false)
+      .map((s) => scheduleToEntry(s))
+      .sort((a, b) => (a.date?.getTime() ?? 0) - (b.date?.getTime() ?? 0));
+    setDrillDown({
+      title: "Overdue payments",
+      description: "Schedules that are past their due date",
+      dateLabel: "Due date",
+      entries,
+    });
+  };
+
+  const handlePaidDrill = () => {
+    const entries = enrichedRecords
+      .filter(
+        (r) =>
+          r.date.getMonth() === now.getMonth() &&
+          r.date.getFullYear() === now.getFullYear(),
+      )
+      .map(recordToEntry)
+      .sort((a, b) => (b.date?.getTime() ?? 0) - (a.date?.getTime() ?? 0));
+    setDrillDown({
+      title: "Paid this month",
+      description: "Payments recorded this calendar month",
+      dateLabel: "Payment date",
+      entries,
+    });
+  };
+
+  // ---- Chart drill-downs ----
+  const handleForecastMonth = (bucket: ForecastBucket) => {
+    const start = bucket.monthStart;
+    const end = addMonths(start, 1);
+    const entries: DrillEntry[] = [];
+    enrichedSchedules.forEach((s) => {
+      if (s.status === "paid" || s.isActive === false) return;
+      projectOccurrences(s, start, end)
+        .filter((d) => isSameMonth(d, start))
+        .forEach((date) => entries.push(scheduleToEntry(s, date)));
+    });
+    entries.sort((a, b) => (a.date?.getTime() ?? 0) - (b.date?.getTime() ?? 0));
+    setDrillDown({
+      title: `Projected expenses · ${format(start, "MMMM yyyy")}`,
+      description:
+        "Scheduled payments (including recurring) projected to fall in this month",
+      dateLabel: "Projected date",
+      entries,
+    });
+  };
+
+  const handleBreakdownSelect = (sel: BreakdownSelection) => {
+    const keys = new Set(sel.memberKeys);
+    const keyOf = (s: (typeof enrichedSchedules)[number]) =>
+      sel.dimension === "type"
+        ? s.expenseTypeId
+        : sel.dimension === "company"
+        ? s.internalCompanyId
+        : s.paymentAccountId;
+    const word =
+      sel.dimension === "type" ? "type" : sel.dimension === "company" ? "company" : "account";
+    const entries = enrichedSchedules
+      .filter((s) => s.status !== "paid" && s.isActive !== false && keys.has(keyOf(s)))
+      .map((s) => scheduleToEntry(s))
+      .sort((a, b) => b.amount - a.amount);
+    setDrillDown({
+      title: sel.label,
+      description: `Active scheduled payments for this ${word}`,
+      dateLabel: "Next due",
+      entries,
+    });
+  };
+
+  const handleTrendMonth = (point: TrendPoint) => {
+    const entries = enrichedRecords
+      .filter((r) => isSameMonth(r.date, point.monthStart))
+      .map(recordToEntry)
+      .sort((a, b) => (b.date?.getTime() ?? 0) - (a.date?.getTime() ?? 0));
+    setDrillDown({
+      title: `Payments recorded · ${format(point.monthStart, "MMMM yyyy")}`,
+      description: "Actual payments recorded in this month",
+      dateLabel: "Payment date",
+      entries,
+    });
+  };
+
+  // ---- Row detail ----
+  const buildScheduleDetail = useCallback(
+    (scheduleId: string, highlightId?: string): ExpenseDetailData | null => {
+      const s = enrichedSchedules.find((x) => x.id === scheduleId);
+      if (!s) return null;
+      const history = records
+        .filter(
+          (r) =>
+            r.paymentScheduleId === s.id ||
+            (!r.paymentScheduleId && r.expenseId === s.expenseId),
+        )
+        .sort(
+          (a, b) =>
+            new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime(),
+        )
+        .map((r) => ({
+          id: r.id,
+          date: format(new Date(r.paymentDate), "MMM dd, yyyy"),
+          amount: formatCurrency(parseAmount(r.amount)),
+          method: r.paymentMethod,
+          account: r.paymentAccountId ? accountLabel(r.paymentAccountId) : undefined,
+          daysLate: Number(r.daysLate ?? 0),
+          hasConfirmation: !!r.confirmationFile,
+        }));
+      return {
+        vendor: s.vendorName,
+        expenseId: s.expenseId,
+        status: s.status,
+        scheduleId: s.id,
+        active: s.isActive !== false,
+        fields: [
+          { label: "Company", value: s.company?.name ?? "—" },
+          { label: "Expense type", value: s.expenseType?.name ?? "—" },
+          { label: "Amount", value: formatCurrency(parseAmount(s.amount)) },
+          { label: "Frequency", value: FREQUENCY_LABELS[s.frequency] ?? s.frequency },
+          { label: "Next due", value: format(new Date(s.nextDueDate), "MMM dd, yyyy") },
+          { label: "Payment account", value: accountLabel(s.paymentAccountId) },
+          { label: "Payment type", value: s.paymentType?.name ?? "—" },
+        ],
+        history,
+        highlightId,
+      };
+    },
+    [enrichedSchedules, records, accountLabel],
+  );
+
+  const buildRecordDetail = useCallback(
+    (recordId: string): ExpenseDetailData | null => {
+      const r = records.find((x) => x.id === recordId);
+      if (!r) return null;
+      const schedule =
+        schedules.find((s) => s.id === r.paymentScheduleId) ??
+        schedules.find((s) => s.expenseId === r.expenseId);
+      if (schedule) return buildScheduleDetail(schedule.id, r.id);
+      return {
+        vendor: r.expenseId,
+        expenseId: r.expenseId,
+        fields: [
+          { label: "Company", value: getCompanyById(r.internalCompanyId)?.name ?? "—" },
+          { label: "Amount", value: formatCurrency(parseAmount(r.amount)) },
+          { label: "Payment date", value: format(new Date(r.paymentDate), "MMM dd, yyyy") },
+          { label: "Payment method", value: r.paymentMethod },
+          {
+            label: "Payment account",
+            value: r.paymentAccountId ? accountLabel(r.paymentAccountId) : "—",
+          },
+        ],
+        history: [
+          {
+            id: r.id,
+            date: format(new Date(r.paymentDate), "MMM dd, yyyy"),
+            amount: formatCurrency(parseAmount(r.amount)),
+            method: r.paymentMethod,
+            account: r.paymentAccountId ? accountLabel(r.paymentAccountId) : undefined,
+            daysLate: Number(r.daysLate ?? 0),
+            hasConfirmation: !!r.confirmationFile,
+          },
+        ],
+        highlightId: r.id,
+      };
+    },
+    [records, schedules, getCompanyById, accountLabel, buildScheduleDetail],
+  );
+
+  const handleOpenEntry = (entry: DrillEntry) => {
+    const built = entry.scheduleId
+      ? buildScheduleDetail(entry.scheduleId, entry.recordId)
+      : entry.recordId
+      ? buildRecordDetail(entry.recordId)
+      : null;
+    if (built) setDetail(built);
+  };
+
+  const handleEditFromDetail = (scheduleId: string) => {
+    const schedule = schedules.find((s) => s.id === scheduleId);
+    if (!schedule) return;
+    setDetail(null);
+    setDrillDown(null);
+    setEditingSchedule(schedule);
+    setEditDialogOpen(true);
+  };
 
   const handleLogout = async () => {
     try {
@@ -460,24 +755,28 @@ export default function Dashboard() {
             value={formatCurrencyWhole(runRate)}
             icon={Wallet}
             description="Recurring commitments / month"
+            onClick={handleRunRateDrill}
           />
           <QuickStatsCard
             title="Due Next 30 Days"
             value={formatCurrencyWhole(dueNext30.amount)}
             icon={CalendarClock}
             description={`${dueNext30.count} payment${dueNext30.count === 1 ? "" : "s"} scheduled`}
+            onClick={handleDueSoonDrill}
           />
           <QuickStatsCard
             title="Overdue"
             value={formatCurrencyWhole(overdueAmount)}
             icon={AlertCircle}
             description={`${overdueSchedules.length} item${overdueSchedules.length === 1 ? "" : "s"} past due`}
+            onClick={handleOverdueDrill}
           />
           <QuickStatsCard
             title="Paid This Month"
             value={formatCurrencyWhole(paidThisMonth.amount)}
             icon={CheckCircle2}
             description={`${paidThisMonth.count} payment${paidThisMonth.count === 1 ? "" : "s"} recorded`}
+            onClick={handlePaidDrill}
           />
         </div>
 
@@ -493,15 +792,19 @@ export default function Dashboard() {
           <TabsContent value="overview" className="space-y-6">
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
               <div className="lg:col-span-2">
-                <ExpenseForecastChart data={forecast} />
+                <ExpenseForecastChart
+                  data={forecast}
+                  onSelectMonth={handleForecastMonth}
+                />
               </div>
               <ExpenseBreakdownChart
                 byType={breakdownByType}
                 byCompany={breakdownByCompany}
                 byAccount={breakdownByAccount}
+                onSelect={handleBreakdownSelect}
               />
             </div>
-            <SpendTrendChart data={spendTrend} />
+            <SpendTrendChart data={spendTrend} onSelectMonth={handleTrendMonth} />
             <UpcomingPaymentsList
               items={upcomingItems}
               windowLabel="Overdue + next 30 days"
@@ -571,6 +874,7 @@ export default function Dashboard() {
                     onDelete={(id) => setDeletingScheduleId(id)}
                     onRecordPayment={handleRecordForSchedule}
                     canDelete={canDelete}
+                    inactive={schedule.isActive === false}
                   />
                 ))}
               </div>
@@ -622,6 +926,20 @@ export default function Dashboard() {
         expenseId={recordPrefill?.expenseId ?? recordingSchedule?.expenseId}
         scheduledAmount={recordingSchedule ? parseFloat(recordingSchedule.amount) : undefined}
         initialValues={recordPrefill?.values}
+      />
+
+      {/* Chart & KPI drill-down */}
+      <DrillDownDialog
+        config={drillDown}
+        onOpenChange={(open) => !open && setDrillDown(null)}
+        onOpenEntry={handleOpenEntry}
+      />
+
+      {/* Expense detail */}
+      <ExpenseDetailDialog
+        data={detail}
+        onOpenChange={(open) => !open && setDetail(null)}
+        onEdit={handleEditFromDetail}
       />
 
       {/* Edit Payment Dialog */}

@@ -25,11 +25,21 @@ const config = {
 
 interface SpendTrendChartProps {
   data: TrendPoint[];
+  onSelectMonth?: (point: TrendPoint) => void;
 }
 
-export default function SpendTrendChart({ data }: SpendTrendChartProps) {
+export default function SpendTrendChart({
+  data,
+  onSelectMonth,
+}: SpendTrendChartProps) {
   const total = data.reduce((sum, point) => sum + point.total, 0);
   const hasData = total > 0;
+
+  const handleChartClick = (state: { activePayload?: Array<{ payload?: TrendPoint }> }) => {
+    if (!onSelectMonth) return;
+    const point = state?.activePayload?.[0]?.payload;
+    if (point && point.total > 0) onSelectMonth(point);
+  };
 
   return (
     <Card data-testid="card-spend-trend">
@@ -40,12 +50,18 @@ export default function SpendTrendChart({ data }: SpendTrendChartProps) {
         </div>
         <CardDescription>
           Actual payments recorded over the last {data.length} months
+          {onSelectMonth ? " · click a month to drill in" : ""}
         </CardDescription>
       </CardHeader>
       <CardContent>
         {hasData ? (
           <ChartContainer config={config} className="aspect-[16/6] w-full">
-            <AreaChart data={data} margin={{ left: 4, right: 4, top: 8 }}>
+            <AreaChart
+              data={data}
+              margin={{ left: 4, right: 4, top: 8 }}
+              onClick={handleChartClick}
+              className={onSelectMonth ? "cursor-pointer" : undefined}
+            >
               <defs>
                 <linearGradient id="fillSpend" x1="0" y1="0" x2="0" y2="1">
                   <stop

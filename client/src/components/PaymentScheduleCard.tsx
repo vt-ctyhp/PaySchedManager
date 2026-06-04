@@ -25,6 +25,7 @@ interface PaymentScheduleCardProps {
   onDelete?: (id: string) => void;
   onRecordPayment?: (id: string) => void;
   canDelete?: boolean;
+  inactive?: boolean;
 }
 
 const statusConfig = {
@@ -54,12 +55,13 @@ export default function PaymentScheduleCard({
   onDelete,
   onRecordPayment,
   canDelete = true,
+  inactive = false,
 }: PaymentScheduleCardProps) {
   const config = statusConfig[status];
   const daysUntil = formatDistanceToNow(dueDate, { addSuffix: true });
 
   return (
-    <Card className="hover-elevate active-elevate-2">
+    <Card className={`hover-elevate active-elevate-2${inactive ? " opacity-60" : ""}`}>
       <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0 pb-3">
         <div className="flex-1 min-w-0">
           {expenseId && (
@@ -70,9 +72,15 @@ export default function PaymentScheduleCard({
           <h3 className="text-lg font-semibold truncate" data-testid={`text-company-${id}`}>
             {company}
           </h3>
-          <Badge className={`${config.color} mt-2`} data-testid={`badge-status-${id}`}>
-            {config.icon} {config.label}
-          </Badge>
+          {inactive ? (
+            <Badge variant="outline" className="mt-2" data-testid={`badge-status-${id}`}>
+              Inactive
+            </Badge>
+          ) : (
+            <Badge className={`${config.color} mt-2`} data-testid={`badge-status-${id}`}>
+              {config.icon} {config.label}
+            </Badge>
+          )}
         </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

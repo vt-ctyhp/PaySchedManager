@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/chart";
 import {
   formatCurrency,
+  formatCurrencyCompact,
   type BreakdownSlice,
 } from "@/lib/expense-analytics";
 
@@ -28,42 +29,60 @@ const CHART_COLORS = [
   "hsl(var(--chart-5))",
 ];
 
-const MAX_SLICES = 6;
+// Keep at or below the palette size (CHART_COLORS) so no two slices collide.
+const MAX_SLICES = 5;
 
-type Dimension = "type" | "company" | "account";
+export type BreakdownDimension = "type" | "company" | "account";
 
-const DIMENSION_LABELS: Record<Dimension, string> = {
+const DIMENSION_LABELS: Record<BreakdownDimension, string> = {
   type: "Type",
   company: "Company",
   account: "Account",
 };
 
+export interface BreakdownSelection {
+  dimension: BreakdownDimension;
+  label: string;
+  /** The underlying group keys (more than one for the collapsed "Other" slice). */
+  memberKeys: string[];
+}
+
+/** A slice plus the keys it represents (collapsed "Other" covers many keys). */
+interface DisplaySlice extends BreakdownSlice {
+  memberKeys: string[];
+}
+
 interface ExpenseBreakdownChartProps {
   byType: BreakdownSlice[];
   byCompany: BreakdownSlice[];
   byAccount: BreakdownSlice[];
+  onSelect?: (selection: BreakdownSelection) => void;
 }
 
 /** Collapse a long tail of small slices into a single "Other" slice. */
-function collapse(slices: BreakdownSlice[]): BreakdownSlice[] {
-  if (slices.length <= MAX_SLICES) return slices;
+function collapse(slices: BreakdownSlice[]): DisplaySlice[] {
+  if (slices.length <= MAX_SLICES) {
+    return slices.map((s) => ({ ...s, memberKeys: [s.key] }));
+  }
   const head = slices.slice(0, MAX_SLICES - 1);
   const tail = slices.slice(MAX_SLICES - 1);
-  const other: BreakdownSlice = {
+  const other: DisplaySlice = {
     key: "__other__",
     label: `Other (${tail.length})`,
     value: tail.reduce((sum, s) => sum + s.value, 0),
     count: tail.reduce((sum, s) => sum + s.count, 0),
+    memberKeys: tail.map((s) => s.key),
   };
-  return [...head, other];
+  return [...head.map((s) => ({ ...s, memberKeys: [s.key] })), other];
 }
 
 export default function ExpenseBreakdownChart({
   byType,
   byCompany,
   byAccount,
+  onSelect,
 }: ExpenseBreakdownChartProps) {
-  const [dimension, setDimension] = useState<Dimension>("type");
+  const [dimension, setDimension] = useState<BreakdownDimension>("type");
 
   const source =
     dimension === "type" ? byType : dimension === "company" ? byCompany : byAccount;
@@ -81,6 +100,10 @@ export default function ExpenseBreakdownChart({
     return c;
   }, [slices]);
 
+  const handleSelect = (slice: DisplaySlice) => {
+    onSelect?.({ dimension, label: slice.label, memberKeys: slice.memberKeys });
+  };
+
   return (
     <Card data-testid="card-breakdown" className="flex flex-col">
       <CardHeader>
@@ -91,16 +114,18 @@ export default function ExpenseBreakdownChart({
               <CardTitle>Expense Breakdown</CardTitle>
             </div>
             <CardDescription className="mt-1">
-              Active scheduled amounts by {DIMENSION_LABELS[dimension].toLowerCase()}
+              Scheduled amounts by {DIMENSION_LABELS[dimension].toLowerCase()}
+              {onSelect ? " · click to drill in" : ""}
             </CardDescription>
           </div>
           <ToggleGroup
             type="single"
             value={dimension}
-            onValueChange={(value) => value && setDimension(value as Dimension)}
+            onValueChange={(value) => value && setDimension(value as BreakdownDimension)}
+            variant="outline"
             size="sm"
           >
-            {(Object.keys(DIMENSION_LABELS) as Dimension[]).map((dim) => (
+            {(Object.keys(DIMENSION_LABELS) as BreakdownDimension[]).map((dim) => (
               <ToggleGroupItem
                 key={dim}
                 value={dim}
@@ -113,12 +138,12 @@ export default function ExpenseBreakdownChart({
           </ToggleGroup>
         </div>
       </CardHeader>
-      <CardContent className="flex flex-1 flex-col gap-4 sm:flex-row sm:items-center">
+      <CardContent className="flex flex-1 flex-col items-center justify-center gap-5">
         {total > 0 ? (
           <>
             <ChartContainer
               config={config}
-              className="mx-auto aspect-square h-[200px]"
+              className="aspect-square h-[180px] w-[180px]"
             >
               <PieChart>
                 <ChartTooltip
@@ -140,10 +165,12 @@ export default function ExpenseBreakdownChart({
                   data={slices}
                   dataKey="value"
                   nameKey="label"
-                  innerRadius={55}
-                  outerRadius={85}
+                  innerRadius={50}
+                  outerRadius={80}
                   strokeWidth={2}
                   paddingAngle={2}
+                  onClick={(_, index) => slices[index] && handleSelect(slices[index])}
+                  className={onSelect ? "cursor-pointer focus:outline-none" : undefined}
                 >
                   {slices.map((slice, i) => (
                     <Cell
@@ -154,27 +181,33 @@ export default function ExpenseBreakdownChart({
                 </Pie>
               </PieChart>
             </ChartContainer>
-            <ul className="flex-1 space-y-2" data-testid="breakdown-legend">
+
+            <ul className="w-full space-y-1" data-testid="breakdown-legend">
               {slices.map((slice, i) => {
                 const pct = total > 0 ? (slice.value / total) * 100 : 0;
                 return (
-                  <li
-                    key={slice.key}
-                    className="flex items-center gap-2 text-sm"
-                  >
-                    <span
-                      className="h-2.5 w-2.5 shrink-0 rounded-full"
-                      style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }}
-                    />
-                    <span className="min-w-0 flex-1 truncate" title={slice.label}>
-                      {slice.label}
-                    </span>
-                    <span className="font-mono font-medium">
-                      {formatCurrency(slice.value)}
-                    </span>
-                    <span className="w-10 text-right text-xs text-muted-foreground">
-                      {pct.toFixed(0)}%
-                    </span>
+                  <li key={slice.key}>
+                    <button
+                      type="button"
+                      onClick={() => handleSelect(slice)}
+                      disabled={!onSelect}
+                      className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-sm hover-elevate disabled:cursor-default"
+                      data-testid={`legend-${slice.key}`}
+                    >
+                      <span
+                        className="h-2.5 w-2.5 shrink-0 rounded-full"
+                        style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }}
+                      />
+                      <span className="min-w-0 flex-1 truncate" title={slice.label}>
+                        {slice.label}
+                      </span>
+                      <span className="shrink-0 font-mono font-medium tabular-nums">
+                        {formatCurrencyCompact(slice.value)}
+                      </span>
+                      <span className="w-9 shrink-0 text-right text-xs text-muted-foreground tabular-nums">
+                        {pct.toFixed(0)}%
+                      </span>
+                    </button>
                   </li>
                 );
               })}

@@ -25,11 +25,22 @@ const config = {
 
 interface ExpenseForecastChartProps {
   data: ForecastBucket[];
+  onSelectMonth?: (bucket: ForecastBucket) => void;
 }
 
-export default function ExpenseForecastChart({ data }: ExpenseForecastChartProps) {
+export default function ExpenseForecastChart({
+  data,
+  onSelectMonth,
+}: ExpenseForecastChartProps) {
   const total = data.reduce((sum, bucket) => sum + bucket.total, 0);
   const hasData = total > 0;
+
+  const handleBarClick = (payload: unknown) => {
+    if (!onSelectMonth) return;
+    const entry = payload as { payload?: ForecastBucket } & Partial<ForecastBucket>;
+    const bucket = (entry?.payload ?? entry) as ForecastBucket;
+    if (bucket && bucket.monthStart) onSelectMonth(bucket);
+  };
 
   return (
     <Card data-testid="card-forecast">
@@ -44,7 +55,7 @@ export default function ExpenseForecastChart({ data }: ExpenseForecastChartProps
           <span className="font-medium text-foreground">
             {formatCurrency(total)}
           </span>{" "}
-          total
+          total{onSelectMonth ? " · click a month to drill in" : ""}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -86,6 +97,8 @@ export default function ExpenseForecastChart({ data }: ExpenseForecastChartProps
                 dataKey="total"
                 fill="var(--color-total)"
                 radius={[4, 4, 0, 0]}
+                onClick={handleBarClick}
+                cursor={onSelectMonth ? "pointer" : undefined}
               />
             </BarChart>
           </ChartContainer>
