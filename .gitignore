@@ -6,3 +6,4 @@ vite.config.ts.*
 *.tar.gz
 # Superpowers brainstorm scratch
 .superpowers/
+.vercel

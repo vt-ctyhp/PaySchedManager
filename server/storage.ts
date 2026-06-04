@@ -274,7 +274,7 @@ export class MemStorage implements IStorage {
   }
 
   private async initializeDefaults() {
-    const bcrypt = await import("bcrypt");
+    const bcrypt = await import("bcryptjs");
     const SALT_ROUNDS = 10;
 
     if (!Array.from(this.users.values()).some((user) => user.username === "admin")) {
@@ -774,6 +774,9 @@ export class PgStorage implements IStorage {
     this.pool = new Pool({
       connectionString,
       ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : undefined,
+      // In serverless (Vercel) many instances share the DB pooler, so keep each
+      // instance's pool small via PG_POOL_MAX. Unset locally -> pg default (10).
+      max: process.env.PG_POOL_MAX ? parseInt(process.env.PG_POOL_MAX, 10) : undefined,
     });
     this.db = drizzle(this.pool, { schema });
   }
@@ -796,7 +799,7 @@ export class PgStorage implements IStorage {
       return;
     }
 
-    const bcrypt = await import("bcrypt");
+    const bcrypt = await import("bcryptjs");
     const hashedPassword = await bcrypt.hash(password, 10);
 
     await this.createUser({

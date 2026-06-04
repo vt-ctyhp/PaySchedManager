@@ -1,4 +1,5 @@
 import path from "path";
+import os from "os";
 import { existsSync, mkdirSync, createReadStream } from "fs";
 import multer from "multer";
 import { randomUUID } from "crypto";
@@ -6,11 +7,19 @@ import type { Express } from "express";
 import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import type { Readable } from "stream";
 
-const uploadDir = path.join(process.cwd(), "uploads");
+// On serverless (Vercel) the deployment filesystem is read-only; only the
+// system temp dir is writable. Fall back to it so module load never crashes.
+const uploadBase = process.env.VERCEL ? os.tmpdir() : process.cwd();
+const uploadDir = path.join(uploadBase, "uploads");
 const useS3 = Boolean(process.env.S3_BUCKET_NAME && process.env.AWS_REGION);
 
 if (!useS3 && !existsSync(uploadDir)) {
-  mkdirSync(uploadDir, { recursive: true });
+  try {
+    mkdirSync(uploadDir, { recursive: true });
+  } catch {
+    // Read-only filesystem with no S3 configured: disk uploads are unavailable.
+    // Set S3_BUCKET_NAME + AWS_REGION for persistent file storage.
+  }
 }
 
 const memoryStorage = multer.memoryStorage();

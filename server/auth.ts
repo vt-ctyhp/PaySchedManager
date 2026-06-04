@@ -1,4 +1,4 @@
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import { type User } from "@shared/schema";
 import { storage } from "./storage";
 
