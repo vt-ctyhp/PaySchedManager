@@ -6,7 +6,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/hooks/useAuth";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import Dashboard from "@/pages/Dashboard";
-import Reports from "@/pages/Reports";
 import Settings from "@/pages/Settings";
 import AuditLog from "@/pages/AuditLog";
 import Login from "@/pages/Login";
@@ -19,9 +18,6 @@ function Router() {
       <Route path="/login" component={Login} />
       <Route path="/">
         {() => <ProtectedRoute component={Dashboard} />}
-      </Route>
-      <Route path="/reports">
-        {() => <ProtectedRoute component={Reports} />}
       </Route>
       <Route path="/settings">
         {() => <ProtectedRoute component={Settings} />}

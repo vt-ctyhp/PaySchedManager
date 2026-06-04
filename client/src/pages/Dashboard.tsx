@@ -19,9 +19,14 @@ import { CSVImportDialog } from "@/components/CSVImportDialog";
 import ExpenseForecastChart from "@/components/dashboard/ExpenseForecastChart";
 import ExpenseBreakdownChart from "@/components/dashboard/ExpenseBreakdownChart";
 import SpendTrendChart from "@/components/dashboard/SpendTrendChart";
-import UpcomingPaymentsList, {
+import UpcomingPanel, {
   type UpcomingPaymentItem,
-} from "@/components/dashboard/UpcomingPaymentsList";
+  type UpcomingCompanyRow,
+  type UpcomingView,
+} from "@/components/dashboard/UpcomingPanel";
+import PaymentIssuesPanel, {
+  type PaymentIssue,
+} from "@/components/dashboard/PaymentIssuesPanel";
 import DrillDownDialog, {
   type DrillDownConfig,
   type DrillEntry,
@@ -58,7 +63,7 @@ import type {
   PaymentType,
   ExpenseType,
 } from "@shared/schema";
-import { differenceInDays, addDays, addMonths, isSameMonth, format } from "date-fns";
+import { differenceInDays, addDays, addMonths, addQuarters, addYears, isSameMonth, format } from "date-fns";
 import {
   monthlyRunRate,
   monthlyForecast,
@@ -76,8 +81,31 @@ import {
 } from "@/lib/expense-analytics";
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
-const UPCOMING_HORIZON_DAYS = 30;
 const UPCOMING_LIST_LIMIT = 8;
+
+type Timeframe = "week" | "month" | "quarter" | "year";
+
+const TIMEFRAME_LABELS: Record<Timeframe, string> = {
+  week: "Next 7 Days",
+  month: "Next 30 Days",
+  quarter: "Next 90 Days",
+  year: "Next 12 Months",
+};
+
+function getTimeframeEnd(timeframe: Timeframe, start: Date): Date {
+  switch (timeframe) {
+    case "week":
+      return addDays(start, 7);
+    case "month":
+      return addMonths(start, 1);
+    case "quarter":
+      return addQuarters(start, 1);
+    case "year":
+      return addYears(start, 1);
+    default:
+      return addMonths(start, 1);
+  }
+}
 
 export default function Dashboard() {
   const { user, logout, isAdmin } = useAuth();
@@ -85,6 +113,8 @@ export default function Dashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const [scheduleFilter, setScheduleFilter] = useState("all");
   const [activeView, setActiveView] = useState("overview");
+  const [timeframe, setTimeframe] = useState<Timeframe>("month");
+  const [upcomingView, setUpcomingView] = useState<UpcomingView>("company");
   const [editingSchedule, setEditingSchedule] = useState<PaymentSchedule | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [deletingScheduleId, setDeletingScheduleId] = useState<string | null>(null);
@@ -99,6 +129,10 @@ export default function Dashboard() {
 
   // Stable "now" so memoised analytics don't shift on every render.
   const now = useMemo(() => new Date(), []);
+  const timeframeEnd = useMemo(
+    () => getTimeframeEnd(timeframe, now),
+    [timeframe, now],
+  );
 
   const handleOneTimeScheduleCreated = useCallback(
     ({
@@ -318,8 +352,8 @@ export default function Dashboard() {
   const runRate = useMemo(() => monthlyRunRate(schedules), [schedules]);
 
   const forecast = useMemo(
-    () => monthlyForecast(schedules, now, 6),
-    [schedules, now],
+    () => monthlyForecast(schedules, now, timeframe === "year" ? 12 : 6),
+    [schedules, now, timeframe],
   );
 
   const spendTrend = useMemo(
@@ -357,9 +391,8 @@ export default function Dashboard() {
     [schedules, accountLabel],
   );
 
-  // Upcoming + overdue payments list
+  // Upcoming + overdue payments list (scoped to the active timeframe)
   const upcomingItems: UpcomingPaymentItem[] = useMemo(() => {
-    const horizon = addDays(now, UPCOMING_HORIZON_DAYS);
     return enrichedSchedules
       .filter((s) => s.status !== "paid" && s.isActive !== false)
       .map((s) => ({
@@ -372,10 +405,128 @@ export default function Dashboard() {
         dueDate: new Date(s.nextDueDate),
         status: s.status as UpcomingPaymentItem["status"],
       }))
-      .filter((item) => item.dueDate <= horizon)
+      .filter((item) => item.dueDate <= timeframeEnd)
       .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime())
       .slice(0, UPCOMING_LIST_LIMIT);
-  }, [enrichedSchedules, now]);
+  }, [enrichedSchedules, timeframeEnd]);
+
+  // Upcoming obligations grouped by internal company, within the timeframe.
+  const upcomingByCompany: UpcomingCompanyRow[] = useMemo(() => {
+    const groups = new Map<string, UpcomingCompanyRow>();
+    enrichedSchedules.forEach((s) => {
+      if (s.status === "paid" || s.isActive === false) return;
+      const dueDate = new Date(s.nextDueDate);
+      if (dueDate < now || dueDate > timeframeEnd) return;
+      const company = s.company;
+      if (!company) return;
+      const existing =
+        groups.get(company.id) ?? {
+          companyId: company.id,
+          companyName: company.name,
+          totalAmount: 0,
+          scheduledCount: 0,
+          soonestDue: undefined,
+        };
+      existing.totalAmount += parseAmount(s.amount);
+      existing.scheduledCount += 1;
+      if (!existing.soonestDue || dueDate < existing.soonestDue) {
+        existing.soonestDue = dueDate;
+      }
+      groups.set(company.id, existing);
+    });
+    return Array.from(groups.values()).sort((a, b) => b.totalAmount - a.totalAmount);
+  }, [enrichedSchedules, now, timeframeEnd]);
+
+  // Payment issues across all active obligations (not timeframe-scoped — an
+  // issue is an issue regardless of the selected window).
+  const issues: PaymentIssue[] = useMemo(() => {
+    const tolerance = 0.01;
+    const recordsByExpenseId = new Map<string, PaymentRecord[]>();
+    records.forEach((record) => {
+      const bucket = recordsByExpenseId.get(record.expenseId) ?? [];
+      bucket.push(record);
+      recordsByExpenseId.set(record.expenseId, bucket);
+    });
+
+    const list: PaymentIssue[] = [];
+    enrichedSchedules.forEach((s) => {
+      if (s.status === "paid" || s.isActive === false) return;
+      const dueDate = new Date(s.nextDueDate);
+      const scheduleAmount = parseAmount(s.amount);
+      const scheduleRecords = recordsByExpenseId.get(s.expenseId) ?? [];
+      const latest = scheduleRecords
+        .slice()
+        .sort(
+          (a, b) =>
+            new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime(),
+        )[0];
+
+      if (dueDate < now) {
+        list.push({
+          scheduleId: s.id,
+          type: "overdue",
+          vendorName: s.vendorName,
+          expenseId: s.expenseId,
+          companyName: s.company?.name,
+          amount: scheduleAmount,
+          detail: `Due ${format(dueDate, "MMM dd, yyyy")}`,
+        });
+      }
+
+      if (latest) {
+        const paidAmount = parseAmount(latest.amount);
+        const paidOn = format(new Date(latest.paymentDate), "MMM dd, yyyy");
+        if (paidAmount + tolerance < scheduleAmount) {
+          list.push({
+            scheduleId: s.id,
+            type: "underpaid",
+            vendorName: s.vendorName,
+            expenseId: s.expenseId,
+            companyName: s.company?.name,
+            amount: scheduleAmount,
+            detail: `Paid ${formatCurrency(paidAmount)} of ${formatCurrency(scheduleAmount)} on ${paidOn}`,
+          });
+        }
+        if (paidAmount > scheduleAmount + tolerance) {
+          list.push({
+            scheduleId: s.id,
+            type: "overpaid",
+            vendorName: s.vendorName,
+            expenseId: s.expenseId,
+            companyName: s.company?.name,
+            amount: scheduleAmount,
+            detail: `Paid ${formatCurrency(paidAmount)} over ${formatCurrency(scheduleAmount)} on ${paidOn}`,
+          });
+        }
+      }
+    });
+
+    records.forEach((record) => {
+      const daysLate = Number(record.daysLate ?? 0);
+      if (daysLate <= 0) return;
+      const s =
+        enrichedSchedules.find((x) => x.id === record.paymentScheduleId) ??
+        enrichedSchedules.find((x) => x.expenseId === record.expenseId);
+      if (!s || s.isActive === false) return;
+      const dueDate = record.scheduledDueDate
+        ? new Date(record.scheduledDueDate)
+        : undefined;
+      list.push({
+        scheduleId: s.id,
+        type: "late",
+        vendorName: s.vendorName,
+        expenseId: s.expenseId,
+        companyName: s.company?.name,
+        amount: parseAmount(s.amount),
+        detail: `Paid ${format(new Date(record.paymentDate), "MMM dd, yyyy")} (${daysLate} day${daysLate === 1 ? "" : "s"} late${
+          dueDate ? `; due ${format(dueDate, "MMM dd, yyyy")}` : ""
+        })`,
+      });
+    });
+
+    const priority = { overdue: 0, late: 1, underpaid: 2, overpaid: 3 } as const;
+    return list.sort((a, b) => priority[a.type] - priority[b.type]);
+  }, [enrichedSchedules, records, now]);
 
   // ---- KPI figures ----
   const overdueSchedules = enrichedSchedules.filter(
@@ -383,19 +534,18 @@ export default function Dashboard() {
   );
   const overdueAmount = overdueSchedules.reduce((sum, s) => sum + parseAmount(s.amount), 0);
 
-  const dueNext30 = useMemo(() => {
-    const horizon = addDays(now, 30);
+  const upcomingInTimeframe = useMemo(() => {
     const items = enrichedSchedules.filter((s) => {
       if (s.status === "paid" || s.status === "overdue") return false;
       if (s.isActive === false) return false;
       const due = new Date(s.nextDueDate);
-      return due >= now && due <= horizon;
+      return due >= now && due <= timeframeEnd;
     });
     return {
       count: items.length,
       amount: items.reduce((sum, s) => sum + parseAmount(s.amount), 0),
     };
-  }, [enrichedSchedules, now]);
+  }, [enrichedSchedules, now, timeframeEnd]);
 
   const paidThisMonth = useMemo(() => {
     const items = enrichedRecords.filter(
@@ -490,19 +640,37 @@ export default function Dashboard() {
     });
   };
 
-  const handleDueSoonDrill = () => {
-    const horizon = addDays(now, 30);
+  const handleUpcomingDrill = () => {
     const entries = enrichedSchedules
       .filter((s) => {
         if (s.status === "paid" || s.status === "overdue") return false;
+        if (s.isActive === false) return false;
         const due = new Date(s.nextDueDate);
-        return due >= now && due <= horizon;
+        return due >= now && due <= timeframeEnd;
       })
       .map((s) => scheduleToEntry(s))
       .sort((a, b) => (a.date?.getTime() ?? 0) - (b.date?.getTime() ?? 0));
     setDrillDown({
-      title: "Due in the next 30 days",
-      description: "Scheduled payments coming due within 30 days",
+      title: `Upcoming · ${TIMEFRAME_LABELS[timeframe]}`,
+      description: `Scheduled payments coming due in the ${TIMEFRAME_LABELS[timeframe].toLowerCase()}`,
+      dateLabel: "Due date",
+      entries,
+    });
+  };
+
+  const handleCompanyDrill = (companyId: string, companyName: string) => {
+    const entries = enrichedSchedules
+      .filter((s) => {
+        if (s.status === "paid" || s.isActive === false) return false;
+        if (s.internalCompanyId !== companyId) return false;
+        const due = new Date(s.nextDueDate);
+        return due >= now && due <= timeframeEnd;
+      })
+      .map((s) => scheduleToEntry(s))
+      .sort((a, b) => (a.date?.getTime() ?? 0) - (b.date?.getTime() ?? 0));
+    setDrillDown({
+      title: `Upcoming · ${companyName}`,
+      description: `Scheduled payments due ${format(now, "MMM dd")} → ${format(timeframeEnd, "MMM dd, yyyy")}`,
       dateLabel: "Due date",
       entries,
     });
@@ -721,10 +889,27 @@ export default function Dashboard() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <ToggleGroup
+              type="single"
+              value={timeframe}
+              onValueChange={(value) => value && setTimeframe(value as Timeframe)}
+              variant="outline"
+              size="sm"
+              className="mr-1"
+              data-testid="toggle-timeframe"
+            >
+              {(Object.keys(TIMEFRAME_LABELS) as Timeframe[]).map((value) => (
+                <ToggleGroupItem
+                  key={value}
+                  value={value}
+                  className="px-3"
+                  data-testid={`toggle-timeframe-${value}`}
+                >
+                  {TIMEFRAME_LABELS[value]}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
             <CSVImportDialog />
-            <Button asChild variant="secondary" data-testid="button-reports">
-              <Link href="/reports">Reports</Link>
-            </Button>
             {isAdmin && (
               <Button asChild variant="outline" data-testid="button-audit">
                 <Link href="/audit">Audit Log</Link>
@@ -758,11 +943,11 @@ export default function Dashboard() {
             onClick={handleRunRateDrill}
           />
           <QuickStatsCard
-            title="Due Next 30 Days"
-            value={formatCurrencyWhole(dueNext30.amount)}
+            title="Upcoming"
+            value={formatCurrencyWhole(upcomingInTimeframe.amount)}
             icon={CalendarClock}
-            description={`${dueNext30.count} payment${dueNext30.count === 1 ? "" : "s"} scheduled`}
-            onClick={handleDueSoonDrill}
+            description={`${upcomingInTimeframe.count} due · ${TIMEFRAME_LABELS[timeframe]}`}
+            onClick={handleUpcomingDrill}
           />
           <QuickStatsCard
             title="Overdue"
@@ -804,12 +989,25 @@ export default function Dashboard() {
                 onSelect={handleBreakdownSelect}
               />
             </div>
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 items-start">
+              <UpcomingPanel
+                view={upcomingView}
+                onViewChange={setUpcomingView}
+                windowLabel={`Overdue + ${TIMEFRAME_LABELS[timeframe].toLowerCase()}`}
+                items={upcomingItems}
+                byCompany={upcomingByCompany}
+                onRecordPayment={handleRecordForSchedule}
+                onSelectCompany={handleCompanyDrill}
+              />
+              <PaymentIssuesPanel
+                issues={issues}
+                onSelect={(scheduleId) => {
+                  const built = buildScheduleDetail(scheduleId);
+                  if (built) setDetail(built);
+                }}
+              />
+            </div>
             <SpendTrendChart data={spendTrend} onSelectMonth={handleTrendMonth} />
-            <UpcomingPaymentsList
-              items={upcomingItems}
-              windowLabel="Overdue + next 30 days"
-              onRecordPayment={handleRecordForSchedule}
-            />
           </TabsContent>
 
           {/* Schedules */}
