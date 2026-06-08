@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback, memo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   Dialog,
@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Upload, ArrowRight, AlertCircle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Combobox } from "@/components/ui/combobox";
+import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Check, X } from "lucide-react";
@@ -36,6 +36,99 @@ interface ReviewTransaction extends CSVTransaction {
   internalCompanyId?: string;
   action: 'record' | 'skip';
 }
+
+interface ReviewRowProps {
+  txn: ReviewTransaction;
+  index: number;
+  isSelected: boolean;
+  companyOptions: ComboboxOption[];
+  accountName: string | null;
+  onToggleSelect: (index: number) => void;
+  onChangeCompany: (index: number, value: string) => void;
+  onSetAction: (index: number, action: ReviewTransaction['action']) => void;
+}
+
+// Memoized so that selecting a company on one row does not re-render every
+// other row. Re-rendering the whole table on each interaction made the dialog
+// sluggish and, under the resulting jank, the company dropdown could register a
+// click on the wrong item.
+const ReviewRow = memo(function ReviewRow({
+  txn,
+  index,
+  isSelected,
+  companyOptions,
+  accountName,
+  onToggleSelect,
+  onChangeCompany,
+  onSetAction,
+}: ReviewRowProps) {
+  return (
+    <TableRow className={isSelected ? "bg-muted/50" : undefined}>
+      <TableCell className="text-center">
+        <Checkbox
+          checked={isSelected}
+          onCheckedChange={() => onToggleSelect(index)}
+          aria-label={`Select transaction ${index + 1}`}
+        />
+      </TableCell>
+      <TableCell className="text-sm">{txn.date}</TableCell>
+      <TableCell className="text-sm font-medium">{txn.vendorName}</TableCell>
+      <TableCell className="text-sm font-mono">${txn.amount.toFixed(2)}</TableCell>
+      <TableCell className="text-sm">
+        {accountName ? (
+          <span className="text-muted-foreground">{accountName}</span>
+        ) : (
+          <Badge variant="outline">Not mapped</Badge>
+        )}
+      </TableCell>
+      <TableCell>
+        <div className="w-44">
+          <Combobox
+            data-testid={`select-company-${index}`}
+            value={txn.internalCompanyId || ''}
+            onValueChange={(value) => onChangeCompany(index, value)}
+            options={companyOptions}
+            placeholder="Select company"
+            searchPlaceholder="Search companies..."
+            emptyText="No companies found."
+            className="h-8 text-sm"
+          />
+        </div>
+      </TableCell>
+      <TableCell>
+        {txn.matchConfidence ? (
+          <Badge
+            variant={txn.matchConfidence >= 85 ? "default" : txn.matchConfidence >= 60 ? "secondary" : "outline"}
+          >
+            {txn.matchConfidence}%
+          </Badge>
+        ) : (
+          <span className="text-xs text-muted-foreground">No match</span>
+        )}
+      </TableCell>
+      <TableCell>
+        <div className="flex gap-1">
+          <Button
+            size="sm"
+            variant={txn.action === 'record' ? 'default' : 'outline'}
+            onClick={() => onSetAction(index, 'record')}
+            data-testid={`button-record-${index}`}
+          >
+            <Check className="h-3 w-3" />
+          </Button>
+          <Button
+            size="sm"
+            variant={txn.action === 'skip' ? 'default' : 'outline'}
+            onClick={() => onSetAction(index, 'skip')}
+            data-testid={`button-skip-${index}`}
+          >
+            <X className="h-3 w-3" />
+          </Button>
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+});
 
 export function CSVImportDialog({ trigger }: CSVImportDialogProps) {
   const [open, setOpen] = useState(false);
@@ -115,11 +208,15 @@ export function CSVImportDialog({ trigger }: CSVImportDialogProps) {
     }
   };
 
+  // Clear selection when the filter changes (the set of visible rows changes).
+  // Intentionally NOT keyed on reviewTransactions: editing a row's company or
+  // action must not wipe the user's selection, and re-running this on every
+  // edit forced a full-table re-render.
   useEffect(() => {
     setSelectedRows(new Set());
-  }, [reviewTransactions, confidenceFilter]);
+  }, [confidenceFilter]);
 
-  const toggleRowSelection = (rowIndex: number) => {
+  const toggleRowSelection = useCallback((rowIndex: number) => {
     setSelectedRows(prev => {
       const next = new Set(prev);
       if (next.has(rowIndex)) {
@@ -129,7 +226,30 @@ export function CSVImportDialog({ trigger }: CSVImportDialogProps) {
       }
       return next;
     });
-  };
+  }, []);
+
+  const handleChangeCompany = useCallback((rowIndex: number, value: string) => {
+    setReviewTransactions(prev =>
+      prev.map((t, i) => (i === rowIndex ? { ...t, internalCompanyId: value } : t)),
+    );
+  }, []);
+
+  const handleSetRowAction = useCallback((rowIndex: number, action: ReviewTransaction['action']) => {
+    setReviewTransactions(prev =>
+      prev.map((t, i) => (i === rowIndex ? { ...t, action } : t)),
+    );
+  }, []);
+
+  const companyOptions = useMemo<ComboboxOption[]>(
+    () => internalCompanies.map((company) => ({ value: company.id, label: company.name })),
+    [internalCompanies],
+  );
+
+  const accountNameLookup = useMemo(() => {
+    const map = new Map<string, string>();
+    paymentAccounts.forEach((account) => map.set(account.id, account.name));
+    return map;
+  }, [paymentAccounts]);
 
   const filteredRows = useMemo(() => {
     return reviewTransactions
@@ -314,25 +434,42 @@ export function CSVImportDialog({ trigger }: CSVImportDialogProps) {
 
   const prepareReviewTransactions = () => {
     const reviewed: ReviewTransaction[] = transactions.map((txn) => {
-      // Find account mapping
-      const mapping = accountMappings.find(
-        m => m.csvAccountName.toLowerCase() === txn.csvAccountName.toLowerCase()
-      );
+      // Resolve the mapped payment account. Prefer the mapping the user just
+      // chose in step 2 (tempMappings) since the saved account-mappings query
+      // may not have refetched yet, then fall back to the persisted mapping.
+      const paymentAccountId =
+        tempMappings[txn.csvAccountName] ??
+        accountMappings.find(
+          m => m.csvAccountName.toLowerCase() === txn.csvAccountName.toLowerCase()
+        )?.paymentAccountId;
+
+      const account = paymentAccountId
+        ? paymentAccounts.find(a => a.id === paymentAccountId)
+        : undefined;
 
       // Fuzzy match vendor to payment schedules
       const match = findBestMatch(txn.vendorName, paymentSchedules as PaymentSchedule[]);
 
+      // Auto-categorize the company: prefer the vendor-matched schedule's
+      // company, then fall back to the selected bank account's company, then any
+      // pre-selected company. Always overridable in the dropdown.
+      const internalCompanyId =
+        match?.schedule.internalCompanyId ??
+        account?.internalCompanyId ??
+        txn.selectedInternalCompanyId;
+
       return {
         ...txn,
-        paymentAccountId: mapping?.paymentAccountId,
+        paymentAccountId,
         matchedScheduleId: match?.schedule.id,
         matchConfidence: match?.similarity,
-        internalCompanyId: match?.schedule.internalCompanyId ?? txn.selectedInternalCompanyId,
+        internalCompanyId,
         action: 'record' as const,
       };
     });
 
     setReviewTransactions(reviewed);
+    setSelectedRows(new Set());
   };
 
   const handleContinue = () => {
@@ -620,88 +757,17 @@ export function CSVImportDialog({ trigger }: CSVImportDialogProps) {
                       </TableRow>
                     ) : (
                       filteredRows.map(({ txn, index }) => (
-                        <TableRow key={index} className={selectedRows.has(index) ? "bg-muted/50" : undefined}>
-                          <TableCell className="text-center">
-                            <Checkbox
-                              checked={selectedRows.has(index)}
-                              onCheckedChange={() => toggleRowSelection(index)}
-                              aria-label={`Select transaction ${index + 1}`}
-                            />
-                          </TableCell>
-                          <TableCell className="text-sm">{txn.date}</TableCell>
-                          <TableCell className="text-sm font-medium">{txn.vendorName}</TableCell>
-                          <TableCell className="text-sm font-mono">${txn.amount.toFixed(2)}</TableCell>
-                          <TableCell className="text-sm">
-                            {txn.paymentAccountId ? (
-                              <span className="text-muted-foreground">
-                                {paymentAccounts.find(a => a.id === txn.paymentAccountId)?.name || 'Unknown'}
-                              </span>
-                            ) : (
-                              <Badge variant="outline">Not mapped</Badge>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <Select
-                              value={txn.internalCompanyId || ''}
-                              onOpenChange={handleSelectOpenChange}
-                              onValueChange={(value) => {
-                                setReviewTransactions(prev =>
-                                  prev.map((t, i) => i === index ? { ...t, internalCompanyId: value } : t)
-                                );
-                              }}
-                            >
-                              <SelectTrigger className="h-8 text-sm" data-testid={`select-company-${index}`}>
-                                <SelectValue placeholder="Select company" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {internalCompanies.map((company: InternalCompany) => (
-                                  <SelectItem key={company.id} value={company.id}>
-                                    {company.name}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </TableCell>
-                          <TableCell>
-                            {txn.matchConfidence ? (
-                              <Badge 
-                                variant={txn.matchConfidence >= 85 ? "default" : txn.matchConfidence >= 60 ? "secondary" : "outline"}
-                              >
-                                {txn.matchConfidence}%
-                              </Badge>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">No match</span>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex gap-1">
-                              <Button
-                                size="sm"
-                                variant={txn.action === 'record' ? 'default' : 'outline'}
-                                onClick={() => {
-                                  setReviewTransactions(prev =>
-                                    prev.map((t, i) => i === index ? { ...t, action: 'record' } : t)
-                                  );
-                                }}
-                                data-testid={`button-record-${index}`}
-                              >
-                                <Check className="h-3 w-3" />
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant={txn.action === 'skip' ? 'default' : 'outline'}
-                                onClick={() => {
-                                  setReviewTransactions(prev =>
-                                    prev.map((t, i) => i === index ? { ...t, action: 'skip' } : t)
-                                  );
-                                }}
-                                data-testid={`button-skip-${index}`}
-                              >
-                                <X className="h-3 w-3" />
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
+                        <ReviewRow
+                          key={index}
+                          txn={txn}
+                          index={index}
+                          isSelected={selectedRows.has(index)}
+                          companyOptions={companyOptions}
+                          accountName={txn.paymentAccountId ? (accountNameLookup.get(txn.paymentAccountId) ?? 'Unknown') : null}
+                          onToggleSelect={toggleRowSelection}
+                          onChangeCompany={handleChangeCompany}
+                          onSetAction={handleSetRowAction}
+                        />
                       ))
                     )}
                   </TableBody>
