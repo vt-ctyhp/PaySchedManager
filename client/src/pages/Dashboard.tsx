@@ -8,6 +8,7 @@ import {
   LogOut,
   Settings as SettingsIcon,
   Search,
+  HelpCircle,
 } from "lucide-react";
 import QuickStatsCard from "@/components/QuickStatsCard";
 import PaymentScheduleCard from "@/components/PaymentScheduleCard";
@@ -915,6 +916,11 @@ export default function Dashboard() {
                 <Link href="/audit">Audit Log</Link>
               </Button>
             )}
+            <Button asChild variant="outline" size="icon" data-testid="button-guide" title="User Guide">
+              <Link href="/guide">
+                <HelpCircle className="h-4 w-4" />
+              </Link>
+            </Button>
             <Button asChild variant="outline" size="icon" data-testid="button-settings">
               <Link href="/settings">
                 <SettingsIcon className="h-4 w-4" />
