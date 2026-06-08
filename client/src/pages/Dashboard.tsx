@@ -9,6 +9,8 @@ import {
   Settings as SettingsIcon,
   Search,
   HelpCircle,
+  LayoutGrid,
+  Table as TableIcon,
 } from "lucide-react";
 import QuickStatsCard from "@/components/QuickStatsCard";
 import PaymentScheduleCard from "@/components/PaymentScheduleCard";
@@ -17,6 +19,13 @@ import EditPaymentDialog from "@/components/EditPaymentDialog";
 import RecordPaymentDialog, { type RecordPaymentInitialValues } from "@/components/RecordPaymentDialog";
 import PaymentHistoryTable from "@/components/PaymentHistoryTable";
 import { CSVImportDialog } from "@/components/CSVImportDialog";
+import ScheduleTable, {
+  type EnrichedSchedule,
+  type ScheduleSortKey,
+} from "@/components/ScheduleTable";
+import BulkActionBar, {
+  type BulkScheduleUpdate,
+} from "@/components/BulkActionBar";
 import ExpenseForecastChart from "@/components/dashboard/ExpenseForecastChart";
 import ExpenseBreakdownChart from "@/components/dashboard/ExpenseBreakdownChart";
 import SpendTrendChart from "@/components/dashboard/SpendTrendChart";
@@ -127,6 +136,13 @@ export default function Dashboard() {
   } | null>(null);
   const [drillDown, setDrillDown] = useState<DrillDownConfig | null>(null);
   const [detail, setDetail] = useState<ExpenseDetailData | null>(null);
+  const [scheduleView, setScheduleView] = useState<"cards" | "table">("cards");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [scheduleSort, setScheduleSort] = useState<{
+    key: ScheduleSortKey;
+    dir: "asc" | "desc";
+  }>({ key: "vendor", dir: "asc" });
+  const [bulkConfirm, setBulkConfirm] = useState<BulkScheduleUpdate | null>(null);
 
   // Stable "now" so memoised analytics don't shift on every render.
   const now = useMemo(() => new Date(), []);
@@ -219,6 +235,32 @@ export default function Dashboard() {
     },
   });
 
+  // Bulk update mutation (category / company / account across many schedules)
+  const bulkUpdateMutation = useMutation({
+    mutationFn: (body: { ids: string[]; update: BulkScheduleUpdate }) =>
+      apiRequest("PATCH", "/api/payment-schedules/bulk", body),
+    onSuccess: async (res: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/payment-schedules"] });
+      let updated = selectedIds.size;
+      try {
+        const data = typeof res?.json === "function" ? await res.json() : res;
+        if (data && typeof data.updated === "number") updated = data.updated;
+      } catch {
+        // keep fallback count
+      }
+      toast({ title: `Updated ${updated} expense${updated === 1 ? "" : "s"}` });
+      setSelectedIds(new Set());
+      setBulkConfirm(null);
+    },
+    onError: () => {
+      toast({
+        title: "Failed to update expenses",
+        description: "Please try again",
+        variant: "destructive",
+      });
+    },
+  });
+
   // Lookups
   const getCompanyById = useCallback(
     (id: string) => companies.find((c) => c.id === id),
@@ -263,7 +305,7 @@ export default function Dashboard() {
   );
 
   // Enrich schedules with status
-  const enrichedSchedules = useMemo(() => {
+  const enrichedSchedules: EnrichedSchedule[] = useMemo(() => {
     return schedules.map(schedule => ({
       ...schedule,
       status: getPaymentStatus(schedule),
@@ -288,6 +330,37 @@ export default function Dashboard() {
 
     return matchesSearch && matchesTab;
   });
+
+  // Sorted rows for the Schedules table view (same filtered set, reordered).
+  const sortedScheduleRows = useMemo(() => {
+    const rows = [...filteredSchedules];
+    const { key, dir } = scheduleSort;
+    const mult = dir === "asc" ? 1 : -1;
+    const valueOf = (s: EnrichedSchedule): string | number => {
+      switch (key) {
+        case "amount":
+          return parseAmount(s.amount);
+        case "company":
+          return s.company?.name ?? "";
+        case "category":
+          return s.expenseType?.name ?? "";
+        case "frequency":
+          return s.frequency;
+        case "vendor":
+        default:
+          return s.vendorName;
+      }
+    };
+    rows.sort((a, b) => {
+      const av = valueOf(a);
+      const bv = valueOf(b);
+      if (typeof av === "number" && typeof bv === "number") {
+        return (av - bv) * mult;
+      }
+      return String(av).localeCompare(String(bv)) * mult;
+    });
+    return rows;
+  }, [filteredSchedules, scheduleSort]);
 
   // Enrich payment records
   const enrichedRecords = useMemo(() => {
@@ -570,6 +643,69 @@ export default function Dashboard() {
       }
     },
     [schedules],
+  );
+
+  // ---- Schedules table: selection, sort, bulk edit ----
+  const toggleRow = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleAllShown = useCallback(
+    (checked: boolean) => {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        sortedScheduleRows.forEach((r) => {
+          if (checked) {
+            next.add(r.id);
+          } else {
+            next.delete(r.id);
+          }
+        });
+        return next;
+      });
+    },
+    [sortedScheduleRows],
+  );
+
+  const changeSort = useCallback((key: ScheduleSortKey) => {
+    setScheduleSort((prev) =>
+      prev.key === key
+        ? { key, dir: prev.dir === "asc" ? "desc" : "asc" }
+        : { key, dir: "asc" },
+    );
+  }, []);
+
+  const handleEditScheduleById = useCallback(
+    (id: string) => {
+      const schedule = schedules.find((s) => s.id === id);
+      if (schedule) {
+        setEditingSchedule(schedule);
+        setEditDialogOpen(true);
+      }
+    },
+    [schedules],
+  );
+
+  const describeBulkUpdate = useCallback(
+    (u: BulkScheduleUpdate): string[] => {
+      const parts: string[] = [];
+      if (u.expenseTypeId)
+        parts.push(`Category → ${getExpenseTypeById(u.expenseTypeId)?.name ?? "—"}`);
+      if (u.internalCompanyId)
+        parts.push(`Company → ${getCompanyById(u.internalCompanyId)?.name ?? "—"}`);
+      if (u.paymentAccountId)
+        parts.push(`Account → ${accountLabel(u.paymentAccountId)}`);
+      return parts;
+    },
+    [getExpenseTypeById, getCompanyById, accountLabel],
   );
 
   // ---- Drill-down helpers ----
@@ -1042,6 +1178,24 @@ export default function Dashboard() {
                   data-testid="input-search"
                 />
               </div>
+              <ToggleGroup
+                type="single"
+                value={scheduleView}
+                onValueChange={(value) =>
+                  value && setScheduleView(value as "cards" | "table")
+                }
+                variant="outline"
+                size="sm"
+                className="ml-auto"
+                data-testid="toggle-schedule-view"
+              >
+                <ToggleGroupItem value="cards" aria-label="Card view" data-testid="view-cards">
+                  <LayoutGrid className="h-4 w-4" />
+                </ToggleGroupItem>
+                <ToggleGroupItem value="table" aria-label="Table view" data-testid="view-table">
+                  <TableIcon className="h-4 w-4" />
+                </ToggleGroupItem>
+              </ToggleGroup>
             </div>
 
             {filteredSchedules.length === 0 ? (
@@ -1056,7 +1210,7 @@ export default function Dashboard() {
                   }
                 />
               </div>
-            ) : (
+            ) : scheduleView === "cards" ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {filteredSchedules.map((schedule) => (
                   <PaymentScheduleCard
@@ -1068,13 +1222,7 @@ export default function Dashboard() {
                     dueDate={new Date(schedule.nextDueDate)}
                     frequency={schedule.frequency as any}
                     status={schedule.status}
-                    onEdit={(id) => {
-                      const scheduleToEdit = schedules.find(s => s.id === id);
-                      if (scheduleToEdit) {
-                        setEditingSchedule(scheduleToEdit);
-                        setEditDialogOpen(true);
-                      }
-                    }}
+                    onEdit={handleEditScheduleById}
                     onDelete={(id) => setDeletingScheduleId(id)}
                     onRecordPayment={handleRecordForSchedule}
                     canDelete={canDelete}
@@ -1082,6 +1230,32 @@ export default function Dashboard() {
                   />
                 ))}
               </div>
+            ) : (
+              <>
+                <ScheduleTable
+                  rows={sortedScheduleRows}
+                  selectedIds={selectedIds}
+                  onToggleRow={toggleRow}
+                  onToggleAll={toggleAllShown}
+                  sort={scheduleSort}
+                  onSortChange={changeSort}
+                  onEdit={handleEditScheduleById}
+                  onDelete={(id) => setDeletingScheduleId(id)}
+                  onRecordPayment={handleRecordForSchedule}
+                  canDelete={canDelete}
+                />
+                {selectedIds.size > 0 && (
+                  <BulkActionBar
+                    count={selectedIds.size}
+                    expenseTypes={expenseTypes}
+                    companies={companies}
+                    paymentAccounts={paymentAccounts}
+                    onClear={() => setSelectedIds(new Set())}
+                    onApply={(update) => setBulkConfirm(update)}
+                    isApplying={bulkUpdateMutation.isPending}
+                  />
+                )}
+              </>
             )}
           </TabsContent>
 
@@ -1184,6 +1358,47 @@ export default function Dashboard() {
               variant="destructive"
             >
               {deleteMutation.isPending ? "Deleting..." : "Delete"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk update confirmation */}
+      <AlertDialog
+        open={!!bulkConfirm}
+        onOpenChange={(open) =>
+          !open && !bulkUpdateMutation.isPending && setBulkConfirm(null)
+        }
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Apply changes to {selectedIds.size} expense
+              {selectedIds.size === 1 ? "" : "s"}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {bulkConfirm && describeBulkUpdate(bulkConfirm).join(" · ")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              disabled={bulkUpdateMutation.isPending}
+              data-testid="bulk-confirm-cancel"
+            >
+              Cancel
+            </AlertDialogCancel>
+            <Button
+              onClick={() =>
+                bulkConfirm &&
+                bulkUpdateMutation.mutate({
+                  ids: Array.from(selectedIds),
+                  update: bulkConfirm,
+                })
+              }
+              disabled={bulkUpdateMutation.isPending}
+              data-testid="bulk-confirm-apply"
+            >
+              {bulkUpdateMutation.isPending ? "Applying..." : "Apply"}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

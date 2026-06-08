@@ -13,6 +13,7 @@ import {
   insertUserSchema,
   insertAccountMappingSchema,
   type InsertPaymentRecord,
+  type PaymentSchedule,
 } from "@shared/schema";
 import { hashPassword, authenticateUser, requireAuth, requireAdmin, getCurrentUser } from "./auth";
 import { upload, persistUploadedFile, getFileStream } from "./upload";
@@ -432,6 +433,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(201).json(schedule);
     } catch (error: any) {
       res.status(400).json({ message: error.message || "Invalid data" });
+    }
+  });
+
+  app.patch("/api/payment-schedules/bulk", requireAuth, async (req, res) => {
+    try {
+      const { ids, update } = req.body ?? {};
+
+      if (
+        !Array.isArray(ids) ||
+        ids.length === 0 ||
+        !ids.every((id) => typeof id === "string")
+      ) {
+        return res
+          .status(400)
+          .json({ message: "ids must be a non-empty array of strings" });
+      }
+
+      const parsedUpdate = insertPaymentScheduleSchema
+        .pick({ expenseTypeId: true, internalCompanyId: true, paymentAccountId: true })
+        .partial()
+        .parse(update ?? {});
+
+      if (Object.keys(parsedUpdate).length === 0) {
+        return res.status(400).json({ message: "No fields to update" });
+      }
+
+      const results = await Promise.all(
+        ids.map((id: string) => storage.updatePaymentSchedule(id, parsedUpdate)),
+      );
+      const schedules = results.filter(
+        (s): s is PaymentSchedule => Boolean(s),
+      );
+
+      res.json({ updated: schedules.length, schedules });
+    } catch (error: any) {
+      res.status(400).json({ message: error?.message || "Invalid data" });
     }
   });
 
