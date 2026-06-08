@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Upload, ArrowRight, AlertCircle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Combobox } from "@/components/ui/combobox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Check, X } from "lucide-react";
@@ -348,6 +349,17 @@ export function CSVImportDialog({ trigger }: CSVImportDialogProps) {
     }
   };
 
+  // Radix Select inside a Radix Dialog can leave `pointer-events: none` stuck
+  // on <body> after a dropdown closes, which silently freezes clicks on the
+  // rest of the dialog (e.g. the Save & Continue button). Clear it on close.
+  const handleSelectOpenChange = (isOpen: boolean) => {
+    if (!isOpen) {
+      setTimeout(() => {
+        document.body.style.pointerEvents = "";
+      }, 0);
+    }
+  };
+
   const unmappedAccounts = uniqueAccounts.filter(a => !a.isMapped);
   const mappedAccounts = uniqueAccounts.filter(a => a.isMapped);
 
@@ -457,7 +469,8 @@ export function CSVImportDialog({ trigger }: CSVImportDialogProps) {
                           </p>
                         </div>
                         <div className="w-64">
-                          <Select
+                          <Combobox
+                            data-testid={`select-mapping-${account.csvAccountName}`}
                             value={tempMappings[account.csvAccountName] || ''}
                             onValueChange={(value) => {
                               setTempMappings(prev => ({
@@ -465,18 +478,17 @@ export function CSVImportDialog({ trigger }: CSVImportDialogProps) {
                                 [account.csvAccountName]: value
                               }));
                             }}
-                          >
-                            <SelectTrigger data-testid={`select-mapping-${account.csvAccountName}`}>
-                              <SelectValue placeholder="Select payment account" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {paymentAccounts.map((pa) => (
-                                <SelectItem key={pa.id} value={pa.id}>
-                                  {pa.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                            placeholder="Select payment account"
+                            searchPlaceholder="Search accounts..."
+                            emptyText="No accounts found."
+                            options={paymentAccounts.map((pa) => ({
+                              value: pa.id,
+                              label: pa.lastFourDigits
+                                ? `${pa.name} (****${pa.lastFourDigits})`
+                                : pa.name,
+                              keywords: pa.lastFourDigits ?? undefined,
+                            }))}
+                          />
                         </div>
                       </div>
                     ))}
@@ -536,6 +548,7 @@ export function CSVImportDialog({ trigger }: CSVImportDialogProps) {
                   </Button>
                   <Select
                     value={bulkCompanySelection}
+                    onOpenChange={handleSelectOpenChange}
                     onValueChange={(value) => {
                       setBulkCompanySelection(value);
                       bulkSetCompany(value);
@@ -554,7 +567,7 @@ export function CSVImportDialog({ trigger }: CSVImportDialogProps) {
                     </SelectContent>
                   </Select>
                 </div>
-                <Select value={confidenceFilter} onValueChange={value => setConfidenceFilter(value as typeof confidenceFilter)}>
+                <Select value={confidenceFilter} onOpenChange={handleSelectOpenChange} onValueChange={value => setConfidenceFilter(value as typeof confidenceFilter)}>
                   <SelectTrigger className="w-[220px] h-8 text-sm">
                     <SelectValue placeholder="Filter by confidence" />
                   </SelectTrigger>
@@ -630,6 +643,7 @@ export function CSVImportDialog({ trigger }: CSVImportDialogProps) {
                           <TableCell>
                             <Select
                               value={txn.internalCompanyId || ''}
+                              onOpenChange={handleSelectOpenChange}
                               onValueChange={(value) => {
                                 setReviewTransactions(prev =>
                                   prev.map((t, i) => i === index ? { ...t, internalCompanyId: value } : t)
