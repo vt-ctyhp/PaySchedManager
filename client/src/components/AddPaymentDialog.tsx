@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Combobox } from "@/components/ui/combobox";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as CalendarIcon, Plus } from "lucide-react";
@@ -200,18 +201,19 @@ export default function AddPaymentDialog({ trigger, onOneTimeScheduleCreated }: 
 
             <div className="space-y-2">
               <Label htmlFor="expense-type">Expense Type</Label>
-              <Select value={expenseTypeId} onValueChange={setExpenseTypeId} required>
-                <SelectTrigger id="expense-type" data-testid="select-expense-type">
-                  <SelectValue placeholder="Select type" />
-                </SelectTrigger>
-                <SelectContent>
-                  {expenseTypes.map((type) => (
-                    <SelectItem key={type.id} value={type.id}>
-                      {type.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Combobox
+                id="expense-type"
+                data-testid="select-expense-type"
+                value={expenseTypeId}
+                onValueChange={setExpenseTypeId}
+                placeholder="Select type"
+                searchPlaceholder="Search types..."
+                emptyText="No expense types found."
+                options={expenseTypes.map((type) => ({
+                  value: type.id,
+                  label: type.name,
+                }))}
+              />
             </div>
           </div>
 
@@ -300,19 +302,22 @@ export default function AddPaymentDialog({ trigger, onOneTimeScheduleCreated }: 
 
             <div className="space-y-2">
               <Label htmlFor="payment-account">Payment Account</Label>
-              <Select value={paymentAccountId} onValueChange={setPaymentAccountId} required>
-                <SelectTrigger id="payment-account" data-testid="select-payment-account">
-                  <SelectValue placeholder="Select account" />
-                </SelectTrigger>
-                <SelectContent>
-                  {paymentAccounts.map((account) => (
-                    <SelectItem key={account.id} value={account.id}>
-                      {account.name}
-                      {account.lastFourDigits && ` (****${account.lastFourDigits})`}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Combobox
+                id="payment-account"
+                data-testid="select-payment-account"
+                value={paymentAccountId}
+                onValueChange={setPaymentAccountId}
+                placeholder="Select account"
+                searchPlaceholder="Search accounts..."
+                emptyText="No accounts found."
+                options={paymentAccounts.map((account) => ({
+                  value: account.id,
+                  label: account.lastFourDigits
+                    ? `${account.name} (****${account.lastFourDigits})`
+                    : account.name,
+                  keywords: account.lastFourDigits ?? undefined,
+                }))}
+              />
             </div>
           </div>
 

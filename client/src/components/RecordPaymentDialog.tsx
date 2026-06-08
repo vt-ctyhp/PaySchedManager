@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Combobox } from "@/components/ui/combobox";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as CalendarIcon, Upload } from "lucide-react";
@@ -168,18 +169,20 @@ export default function RecordPaymentDialog({
           {!preselectedExpenseId && (
             <div className="space-y-2">
               <Label htmlFor="expense-id">Expense ID</Label>
-              <Select value={selectedExpenseId} onValueChange={setSelectedExpenseId} required>
-                <SelectTrigger id="expense-id" data-testid="select-expense-id">
-                  <SelectValue placeholder="Select expense" />
-                </SelectTrigger>
-                <SelectContent>
-                  {schedules.map((schedule) => (
-                    <SelectItem key={schedule.id} value={schedule.expenseId}>
-                      {schedule.expenseId} - {schedule.vendorName} (${schedule.amount})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Combobox
+                id="expense-id"
+                data-testid="select-expense-id"
+                value={selectedExpenseId}
+                onValueChange={setSelectedExpenseId}
+                placeholder="Select expense"
+                searchPlaceholder="Search expenses..."
+                emptyText="No expenses found."
+                options={schedules.map((schedule) => ({
+                  value: schedule.expenseId,
+                  label: `${schedule.expenseId} - ${schedule.vendorName} ($${schedule.amount})`,
+                  keywords: `${schedule.vendorName} ${schedule.amount}`,
+                }))}
+              />
             </div>
           )}
 
@@ -270,18 +273,22 @@ export default function RecordPaymentDialog({
 
           <div className="space-y-2">
             <Label htmlFor="payment-account">Payment Account</Label>
-            <Select value={paymentAccountId} onValueChange={setPaymentAccountId}>
-              <SelectTrigger id="payment-account" data-testid="select-payment-account">
-                <SelectValue placeholder="Select account (optional)" />
-              </SelectTrigger>
-              <SelectContent>
-                {paymentAccounts.map((account) => (
-                  <SelectItem key={account.id} value={account.id}>
-                    {account.name} {account.lastFourDigits && `(**** ${account.lastFourDigits})`}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Combobox
+              id="payment-account"
+              data-testid="select-payment-account"
+              value={paymentAccountId}
+              onValueChange={setPaymentAccountId}
+              placeholder="Select account (optional)"
+              searchPlaceholder="Search accounts..."
+              emptyText="No accounts found."
+              options={paymentAccounts.map((account) => ({
+                value: account.id,
+                label: account.lastFourDigits
+                  ? `${account.name} (**** ${account.lastFourDigits})`
+                  : account.name,
+                keywords: account.lastFourDigits ?? undefined,
+              }))}
+            />
           </div>
 
           <div className="space-y-2">
