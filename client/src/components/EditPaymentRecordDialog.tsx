@@ -19,7 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import type { PaymentAccount, PaymentRecord } from "@shared/schema";
+import type { ExpenseType, PaymentAccount, PaymentRecord } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
 
@@ -28,6 +28,7 @@ interface EditPaymentRecordDialogProps {
   displayAmount: number;
   displayDate: Date;
   paymentAccounts: PaymentAccount[];
+  expenseTypes: ExpenseType[];
   approvers: { id: string; username: string }[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -49,6 +50,7 @@ export default function EditPaymentRecordDialog({
   displayAmount,
   displayDate,
   paymentAccounts,
+  expenseTypes,
   approvers,
   open,
   onOpenChange,
@@ -64,14 +66,18 @@ export default function EditPaymentRecordDialog({
     !!value && paymentAccounts.some((account) => account.id === value);
   const hasApproverOption = (value: string | null | undefined) =>
     !!value && approvers.some((user) => user.id === value);
+  const hasExpenseTypeOption = (value: string | null | undefined) =>
+    !!value && expenseTypes.some((type) => type.id === value);
 
   const UNASSIGNED_ACCOUNT_VALUE = "unassigned-account";
   const NONE_APPROVER_VALUE = "none-approver";
+  const UNCATEGORIZED_VALUE = "uncategorized";
 
   const [amount, setAmount] = useState<string>(formatAmountInput(displayAmount));
   const [paymentDate, setPaymentDate] = useState<string>(formatDateInput(displayDate));
   const [paymentMethod, setPaymentMethod] = useState<string>(normalizeMethod(payment.paymentMethod));
   const [paymentAccountId, setPaymentAccountId] = useState<string>(payment.paymentAccountId ?? UNASSIGNED_ACCOUNT_VALUE);
+  const [expenseTypeId, setExpenseTypeId] = useState<string>(payment.expenseTypeId ?? UNCATEGORIZED_VALUE);
   const [approvedBy, setApprovedBy] = useState<string>(payment.approvedBy ?? NONE_APPROVER_VALUE);
   const [reason, setReason] = useState<string>("");
 
@@ -81,6 +87,7 @@ export default function EditPaymentRecordDialog({
       setPaymentDate(formatDateInput(displayDate));
       setPaymentMethod(normalizeMethod(payment.paymentMethod));
       setPaymentAccountId(payment.paymentAccountId ?? UNASSIGNED_ACCOUNT_VALUE);
+      setExpenseTypeId(payment.expenseTypeId ?? UNCATEGORIZED_VALUE);
       setApprovedBy(payment.approvedBy ?? NONE_APPROVER_VALUE);
       setReason("");
     }
@@ -113,6 +120,7 @@ export default function EditPaymentRecordDialog({
         paymentDate: new Date(paymentDate).toISOString(),
         paymentMethod,
         paymentAccountId: paymentAccountId === UNASSIGNED_ACCOUNT_VALUE ? null : paymentAccountId,
+        expenseTypeId: expenseTypeId === UNCATEGORIZED_VALUE ? null : expenseTypeId,
         approvedBy: approvedBy === NONE_APPROVER_VALUE ? null : approvedBy,
       };
 
@@ -213,6 +221,28 @@ export default function EditPaymentRecordDialog({
                   <SelectItem key={account.id} value={account.id}>
                     {account.name}
                     {account.lastFourDigits ? ` (****${account.lastFourDigits})` : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Category</Label>
+            <Select value={expenseTypeId} onValueChange={setExpenseTypeId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select category" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={UNCATEGORIZED_VALUE}>Uncategorized</SelectItem>
+                {expenseTypeId !== UNCATEGORIZED_VALUE && expenseTypeId && !hasExpenseTypeOption(expenseTypeId) && (
+                  <SelectItem value={expenseTypeId}>
+                    Unknown category ({expenseTypeId})
+                  </SelectItem>
+                )}
+                {expenseTypes.map((type) => (
+                  <SelectItem key={type.id} value={type.id}>
+                    {type.name}
                   </SelectItem>
                 ))}
               </SelectContent>
