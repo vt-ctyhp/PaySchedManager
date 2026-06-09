@@ -315,9 +315,10 @@ The **History** tab is the ledger of every payment that has actually been record
 
 ![History tab](images/10-history.png)
 
-The table columns are: **Date · Company / Vendor · Amount · Payer · Payment Method · Account · Timing · Confirmation · Approval**.
+The table columns are: **Date · Company / Vendor · Amount · Payer · Payment Method · Account · Category · Timing · Confirmation · Approval**.
 
 - **Method** is shown as a colour-coded badge (e.g., Credit Card, Bank Transfer).
+- **Category** is the payment’s **Expense Type** (e.g., Rent, Payroll Taxes). Payments linked to a schedule show that schedule’s category; one-time/imported payments show **Uncategorized** until you set one (see §13). Set or change it via **Edit**.
 - **Timing** reads *“On time (due …)”* or *“N day(s) late (due …)”*.
 - The **Confirmation / Approval** columns show whether files are attached.
 
@@ -340,7 +341,13 @@ Click **Edit** on a History row:
 
 ![Edit payment record dialog](images/11-edit-payment-record.png)
 
-You can update the amount, payment date, payment method, payment account, and “approved by”. A **Reason for edit** is **required** — it, along with a before/after snapshot, is written to the audit log. Click **Update** to save.
+You can update the amount, payment date, payment method, payment account, **category**, and “approved by”. A **Reason for edit** is **required** — it, along with a before/after snapshot, is written to the audit log. Click **Update** to save.
+
+**Setting a category (Expense Type).** The **Category** dropdown lets you classify any payment — this is the only way to categorize an imported one-time payment that isn’t tied to a schedule. Choose an Expense Type, or **Uncategorized** to leave it unset.
+
+- For a payment **linked to a schedule**, the category defaults to the schedule’s Expense Type. Changing it here overrides the category for **this one payment only** — the schedule is untouched.
+- Setting it back to **Uncategorized** on a linked payment makes it fall back to the schedule’s Expense Type again.
+- Categories come from the **Expense Types** list in Settings (§16.5).
 
 ### Deleting a record
 Click **Delete** on a History row (admins only):
@@ -377,6 +384,8 @@ The importer is a three-step wizard:
 - preview the date, amount, account, matched schedule, and confidence for each row.
 
 Click **Import** to create the selected transactions as payment records in one go. They then behave exactly like manually recorded payments (appear in History, count toward totals, get flagged if late/under/over).
+
+> **Categories on imported payments:** transactions that match a schedule inherit that schedule’s **Category** automatically. Unmatched (one-time) imports come in as **Uncategorized** — open the row’s **Edit** dialog to assign a Category (§13).
 
 > **Get matching right once:** the better your **Account Mappings** and vendor/abbreviation setup, the higher the auto-match confidence and the less manual review each import needs.
 

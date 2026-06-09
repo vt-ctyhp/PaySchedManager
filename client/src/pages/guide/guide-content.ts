@@ -394,11 +394,12 @@ export const GUIDE_SECTIONS: GuideSection[] = [
     blocks: [
       { type: "p", text: "The History tab is the ledger of every payment that has actually been recorded." },
       { type: "image", src: IMG("10-history.png"), alt: "History tab", caption: "The payment history table with export buttons." },
-      { type: "p", text: "Columns: Date · Company / Vendor · Amount · Payer · Payment Method · Account · Timing · Confirmation · Approval." },
+      { type: "p", text: "Columns: Date · Company / Vendor · Amount · Payer · Payment Method · Account · Category · Timing · Confirmation · Approval." },
       {
         type: "bullets",
         items: [
           "Method is shown as a colour-coded badge (Credit Card, Bank Transfer, …).",
+          "Category is the payment's Expense Type (e.g., Rent, Payroll Taxes). Payments linked to a schedule show that schedule's category; one-time/imported payments show Uncategorized until you set one via Edit.",
           "Timing reads 'On time (due …)' or 'N day(s) late (due …)'.",
           "The Confirmation / Approval columns show whether files are attached.",
         ],
@@ -425,7 +426,8 @@ export const GUIDE_SECTIONS: GuideSection[] = [
       { type: "p", text: "Because payment records are financial facts, edits and deletions are controlled and logged." },
       { type: "subhead", text: "Editing a record" },
       { type: "image", src: IMG("11-edit-payment-record.png"), alt: "Edit payment record dialog", caption: "A reason for the edit is required and saved to the audit log." },
-      { type: "p", text: "Click Edit on a History row. Update the amount, payment date, method, account, and 'approved by'. A Reason for edit is required — it, with a before/after snapshot, is written to the audit log. Click Update." },
+      { type: "p", text: "Click Edit on a History row. Update the amount, payment date, method, account, category, and 'approved by'. A Reason for edit is required — it, with a before/after snapshot, is written to the audit log. Click Update." },
+      { type: "p", text: "Setting a category (Expense Type): the Category dropdown classifies any payment — this is the only way to categorize an imported one-time payment that isn't tied to a schedule. For a payment linked to a schedule, the category defaults to the schedule's Expense Type; changing it here overrides this one payment only (the schedule is untouched). Choosing Uncategorized on a linked payment makes it fall back to the schedule's Expense Type. Categories come from the Expense Types list in Settings." },
       { type: "subhead", text: "Deleting a record" },
       { type: "image", src: IMG("13-delete-payment-record.png"), alt: "Delete payment record dialog", caption: "Deletions require a reason and are recorded in the audit log." },
       { type: "p", text: "Click Delete on a History row (admins only). A reason is required and the deletion is recorded with a snapshot of what was removed. This is not an undo — be sure before confirming." },
@@ -454,6 +456,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
       },
       { type: "p", text: "Imported transactions behave exactly like manually recorded payments (they appear in History, count toward totals, and get flagged if late/under/over)." },
       { type: "callout", tone: "tip", text: "Get matching right once: the better your Account Mappings and last-4 digits, the higher the auto-match confidence and the less manual review each import needs." },
+      { type: "callout", tone: "tip", text: "Categories on imports: transactions that match a schedule inherit that schedule's Category automatically. Unmatched (one-time) imports come in as Uncategorized — open the row's Edit dialog to assign a Category." },
     ],
   },
   {
