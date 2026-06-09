@@ -57,6 +57,65 @@ export const GUIDE_SECTIONS: GuideSection[] = [
     ],
   },
   {
+    id: "big-picture",
+    title: "The big picture: goal & how it works",
+    icon: "Target",
+    summary: "The goal of PaySchedManager and the simple loop the whole app runs on.",
+    keywords: [
+      "goal", "purpose", "how it works", "big picture", "model", "workflow", "loop",
+      "reconcile", "reconciliation", "one-time", "recurring", "scheduled",
+      "subscription", "auto-withdrawal", "credit card", "misc expenses", "ledger",
+    ],
+    blocks: [
+      { type: "subhead", text: "The goal" },
+      {
+        type: "p",
+        text: "PaySchedManager exists to answer three questions with confidence, at any moment, across every company you run: What do we owe? Did we pay it? Can we prove it? It replaces scattered spreadsheets and a dozen bank logins with one source of truth for your outgoing money — so bills get paid on time, from the right account, with documentation, and nothing slips through the cracks.",
+      },
+      { type: "subhead", text: "How it works — four moving parts" },
+      { type: "p", text: "The whole app is built from four things that build on each other:" },
+      {
+        type: "bullets",
+        items: [
+          "Schedules — the plan. What you owe and when (rent, loans, subscriptions, taxes, vendor bills), recurring or one-time.",
+          "Records — the reality. Proof that a payment actually happened: date, amount, account, method, approver, and attached confirmation.",
+          "Dashboard — the comparison. It lines the plan up against reality: forecasts of what's due, what's overdue, and anything underpaid, overpaid, or late.",
+          "Audit log — the trust layer. Every edit and deletion is recorded with a reason, so the numbers stay defensible.",
+        ],
+      },
+      { type: "subhead", text: "The everyday loop" },
+      {
+        type: "steps",
+        items: [
+          "Set up once — your companies, the accounts you pay from, your vendors, and a schedule for each recurring or one-time obligation.",
+          "Look ahead — the dashboard shows what's due in the next 7 / 30 / 90 days and to whom.",
+          "Pay & record — log a payment when you pay: one at a time, or bulk-imported from a bank/card CSV.",
+          "Reconcile — recording against a schedule moves it forward automatically (advances a recurring bill's next due date, or closes a one-time).",
+          "Review — categorize, attach proof, and clear anything on the attention list (late / under / over).",
+        ],
+      },
+      { type: "subhead", text: "One-time vs. scheduled — and how import helps" },
+      {
+        type: "bullets",
+        items: [
+          "Scheduled payments (rent, loans, subscriptions, auto-withdrawals) live as recurring schedules. Each payment you record advances the schedule to its next due date, so the forecast stays current without manual upkeep.",
+          "One-time payments are tracked two ways: a one-time schedule for something you're planning, or a standalone payment record for a charge that already happened and isn't tied to any schedule.",
+          "Importing transactions does both jobs at once — point it at a credit-card or bank CSV and it captures miscellaneous card spend as one-time records (categorize them on the History tab), and auto-matches recurring subscriptions and auto-withdrawals to their schedules by vendor name, recording the payment and reconciling the schedule in one step.",
+        ],
+      },
+      {
+        type: "callout",
+        tone: "note",
+        text: "Matching is vendor-name based and ends with a quick Review step, so you confirm the high / medium / low-confidence matches before they're saved — auto-matched, not hand-resolved. See 'Importing transactions from CSV' for the full walkthrough.",
+      },
+      {
+        type: "callout",
+        tone: "tip",
+        text: "It's a ledger, not a payment processor: PaySchedManager never moves money — it tracks what you owe and the proof that you paid it. One login spans every internal company, so the whole group's obligations live in one place.",
+      },
+    ],
+  },
+  {
     id: "concepts",
     title: "Key concepts & glossary",
     icon: "BookOpen",
