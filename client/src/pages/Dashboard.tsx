@@ -743,8 +743,9 @@ export default function Dashboard() {
         getCompanyById(rec.internalCompanyId)?.name ??
         (schedule ? getCompanyById(schedule.internalCompanyId)?.name : undefined) ??
         "—";
-      const expenseType = schedule
-        ? getExpenseTypeById(schedule.expenseTypeId)?.name ?? "—"
+      const expenseTypeId = rec.expenseTypeId ?? schedule?.expenseTypeId ?? null;
+      const expenseType = expenseTypeId
+        ? getExpenseTypeById(expenseTypeId)?.name ?? "—"
         : "—";
       return {
         id: r.id,
