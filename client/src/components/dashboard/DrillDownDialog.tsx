@@ -156,10 +156,10 @@ export default function DrillDownDialog({
           {types.length > 1 && (
             <Select value={type} onValueChange={setType}>
               <SelectTrigger className="w-[170px]" data-testid="drill-filter-type">
-                <SelectValue placeholder="Type" />
+                <SelectValue placeholder="Category" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={ALL}>All types</SelectItem>
+                <SelectItem value={ALL}>All categories</SelectItem>
                 {types.map((t) => (
                   <SelectItem key={t} value={t}>
                     {t}
@@ -177,7 +177,7 @@ export default function DrillDownDialog({
               <TableRow>
                 <TableHead>Vendor</TableHead>
                 <TableHead>Company</TableHead>
-                <TableHead>Type</TableHead>
+                <TableHead>Category</TableHead>
                 <TableHead>Account</TableHead>
                 <TableHead>{config?.dateLabel ?? "Date"}</TableHead>
                 <TableHead className="text-right">Amount</TableHead>
