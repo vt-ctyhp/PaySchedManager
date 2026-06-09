@@ -642,6 +642,7 @@ export class MemStorage implements IStorage {
       createdAt: new Date(),
       ...record,
       paymentScheduleId: record.paymentScheduleId ?? null,
+      expenseTypeId: record.expenseTypeId ?? null,
       internalCompanyId: resolvedInternalCompanyId,
       approvedBy: record.approvedBy ?? null,
       paymentAccountId: record.paymentAccountId ?? null,
