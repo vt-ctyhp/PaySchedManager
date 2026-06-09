@@ -7,7 +7,7 @@ import { format } from "date-fns";
 import ManagePaymentFilesDialog from "@/components/ManagePaymentFilesDialog";
 import EditPaymentRecordDialog from "@/components/EditPaymentRecordDialog";
 import DeletePaymentRecordDialog from "@/components/DeletePaymentRecordDialog";
-import type { PaymentAccount, PaymentRecord as PaymentRecordModel } from "@shared/schema";
+import type { ExpenseType, PaymentAccount, PaymentRecord as PaymentRecordModel } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 
 interface PaymentHistoryRow {
@@ -18,6 +18,7 @@ interface PaymentHistoryRow {
   payer: string;
   method: string;
   account?: string;
+  category?: string | null;
   hasConfirmation: boolean;
   confirmationFile?: string | null;
   scheduledDueDate?: Date;
@@ -31,6 +32,7 @@ interface PaymentHistoryRow {
 interface PaymentHistoryTableProps {
   payments: PaymentHistoryRow[];
   paymentAccounts: PaymentAccount[];
+  expenseTypes: ExpenseType[];
   approvers: { id: string; username: string }[];
 }
 
@@ -55,6 +57,7 @@ const methodLabels: Record<string, string> = {
 export default function PaymentHistoryTable({
   payments,
   paymentAccounts,
+  expenseTypes,
   approvers,
 }: PaymentHistoryTableProps) {
   const handleDownload = (filename: string) => {
@@ -302,6 +305,7 @@ export default function PaymentHistoryTable({
               <TableHead>Method</TableHead>
               <TableHead>Timing</TableHead>
               <TableHead>Account</TableHead>
+              <TableHead>Category</TableHead>
               <TableHead className="text-right">Confirmation</TableHead>
               <TableHead className="text-right">Approval</TableHead>
               <TableHead className="text-right">Actions</TableHead>
@@ -310,7 +314,7 @@ export default function PaymentHistoryTable({
           <TableBody>
             {payments.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={11} className="text-center text-muted-foreground py-8">
                   No payment records found
                 </TableCell>
               </TableRow>
@@ -358,6 +362,9 @@ export default function PaymentHistoryTable({
                   </TableCell>
                   <TableCell className="font-mono text-sm" data-testid={`text-account-${payment.id}`}>
                     {payment.account || "—"}
+                  </TableCell>
+                  <TableCell data-testid={`text-category-${payment.id}`}>
+                    {payment.category || "Uncategorized"}
                   </TableCell>
                   <TableCell className="text-right">
                     {payment.hasConfirmation && payment.confirmationFile ? (
@@ -453,6 +460,7 @@ export default function PaymentHistoryTable({
           displayAmount={editingPayment.amount}
           displayDate={editingPayment.date}
           paymentAccounts={paymentAccounts}
+          expenseTypes={expenseTypes}
           approvers={approvers}
         />
       )}
