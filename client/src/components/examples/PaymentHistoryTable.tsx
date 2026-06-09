@@ -89,6 +89,7 @@ export default function PaymentHistoryTableExample() {
       <PaymentHistoryTable
         payments={mockPayments}
         paymentAccounts={[mockAccount]}
+        expenseTypes={[]}
         approvers={[{ id: "user-1", username: "John Doe" }]}
       />
     </div>

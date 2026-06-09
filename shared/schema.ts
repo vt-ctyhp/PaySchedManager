@@ -139,6 +139,7 @@ export type PaymentSchedule = typeof paymentSchedules.$inferSelect;
 export const paymentRecords = pgTable("payment_records", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   paymentScheduleId: varchar("payment_schedule_id"),
+  expenseTypeId: varchar("expense_type_id"), // nullable; one-time payments carry their own category, overrides schedule
   expenseId: text("expense_id").notNull(),
   internalCompanyId: varchar("internal_company_id").notNull(),
   paymentDate: timestamp("payment_date").notNull(),
