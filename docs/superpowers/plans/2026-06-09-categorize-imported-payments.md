@@ -6,7 +6,9 @@
 
 **Architecture:** Add a nullable `expense_type_id` column to `payment_records`. A record's effective category resolves as `record.expenseTypeId ?? schedule?.expenseTypeId ?? null`. The record-edit dialog gains an Expense Type select (prop-drilled `expenseTypes` list, "Uncategorized" sentinel for null). The PUT endpoint and DB update already pass partial fields through unchanged, so no server change is needed. The Dashboard resolves the display name and the history table renders a new Category column.
 
-**Tech Stack:** Drizzle ORM (push-based migrations via `drizzle-kit push`), drizzle-zod, React + TanStack Query, Radix `Select`, Express. No automated test harness exists in this repo — verification is `npm run check` (tsc) plus manual runtime checks.
+**Tech Stack:** Drizzle ORM, drizzle-zod, React + TanStack Query, Radix `Select`, Express. No automated test harness exists in this repo — verification is `npm run check` (tsc) plus manual runtime checks.
+
+> ⚠️ **DO NOT run `npm run db:push` / `drizzle-kit push` against the local database.** The live DB has drifted from `shared/schema.ts`: a runtime `session` table (express-session) and a `confirmation_number` column on `payment_records` exist in the DB but not in the schema file. `drizzle-kit push` would try to **drop** them → data loss. Apply the new column with a direct, additive `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` (the same way `confirmation_number` was added). Local DB URL: `postgresql://viv@localhost:5432/payschedmanager`.
 
 **Spec:** `docs/superpowers/specs/2026-06-09-categorize-imported-payments-design.md`
 
@@ -51,10 +53,21 @@ No change is needed to `insertPaymentRecordSchema` — `createInsertSchema` deri
 Run: `npm run check`
 Expected: PASS (no type errors). The new field on `PaymentRecord` is now visible to the client via `@shared/schema`.
 
-- [ ] **Step 3: Push the schema to the database**
+- [ ] **Step 3: Apply the column to the database directly (NOT db:push)**
 
-Run: `npm run db:push`
-Expected: drizzle-kit reports adding column `expense_type_id` to `payment_records` and applies it. If it prompts, accept the additive change (a nullable column with no default is non-destructive).
+Apply an additive, idempotent `ALTER TABLE` against the local Postgres — **do not** use `drizzle-kit push` (see the warning at the top of this plan; it would drop the `session` table and `confirmation_number` column).
+
+Run:
+```bash
+psql 'postgresql://viv@localhost:5432/payschedmanager' -c "ALTER TABLE payment_records ADD COLUMN IF NOT EXISTS expense_type_id varchar;"
+```
+Expected: `ALTER TABLE` (or no error if it already exists).
+
+Verify:
+```bash
+psql 'postgresql://viv@localhost:5432/payschedmanager' -c "\d payment_records" | grep expense_type_id
+```
+Expected: a row showing `expense_type_id | character varying`.
 
 - [ ] **Step 4: Commit**
 
@@ -370,7 +383,7 @@ Expected: clean working tree; all changes committed across Tasks 1-4.
 
 ## Notes for the implementer
 
-- Migrations are **push-based**: editing `shared/schema.ts` then running `npm run db:push` is the whole migration. There is no SQL file to write.
+- **Migration is a direct `ALTER TABLE` — NOT `db:push`.** Edit `shared/schema.ts` for types, then apply the column with `psql ... ADD COLUMN IF NOT EXISTS`. `drizzle-kit push` is unsafe against this DB (drift: `session` table + `confirmation_number` column not in schema → push would drop them).
 - The server PUT `/api/payment-records/:id` (`server/routes.ts`) and `updatePaymentRecord` (`server/storage.ts`) pass the parsed partial straight through (`insertPaymentRecordSchema.partial().parse(...)` then `.set(record)`), so `expenseTypeId` persists with **no server edit required**. Do not add one.
 - The CSV import (`/api/payment-records/bulk`) intentionally does **not** send `expenseTypeId`; matched imports still display a category via the schedule fallback, and unmatched imports arrive "Uncategorized". This is by design — do not wire RocketMoney's CSV category here (out of scope).
 - Resolution rule lives in exactly one place for display (Dashboard `enrichedRecords`). The dialog edits the raw `record.expenseTypeId` only.
