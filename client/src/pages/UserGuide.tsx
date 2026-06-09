@@ -30,6 +30,7 @@ import {
   ListChecks,
   HelpCircle,
   Wrench,
+  Target,
   ArrowLeft,
   Lightbulb,
   AlertTriangle,
@@ -59,6 +60,7 @@ const ICONS: Record<string, LucideIcon> = {
   ListChecks,
   HelpCircle,
   Wrench,
+  Target,
 };
 
 function blockText(b: GuideBlock): string {
