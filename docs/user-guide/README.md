@@ -46,6 +46,35 @@ You set up **payment schedules** (recurring or one-time obligations such as rent
 
 The app supports multiple **internal companies** (business units / entities) so one login can manage payments across an entire group.
 
+### The big picture — goal & how it works
+
+The goal is to answer three questions with confidence, at any moment, across every company you run: **What do we owe? Did we pay it? Can we prove it?** PaySchedManager replaces scattered spreadsheets and a dozen bank logins with one source of truth for your outgoing money — so bills get paid on time, from the right account, with documentation, and nothing slips through the cracks.
+
+**Four moving parts that build on each other:**
+
+- **Schedules — the plan.** What you owe and when (rent, loans, subscriptions, taxes, vendor bills), recurring or one-time.
+- **Records — the reality.** Proof that a payment actually happened: date, amount, account, method, approver, and attached confirmation.
+- **Dashboard — the comparison.** It lines the plan up against reality: forecasts of what's due, what's overdue, and anything underpaid, overpaid, or late.
+- **Audit log — the trust layer.** Every edit and deletion is recorded with a reason, so the numbers stay defensible.
+
+**The everyday loop:**
+
+1. **Set up once** — your companies, the accounts you pay from, your vendors, and a schedule for each recurring or one-time obligation.
+2. **Look ahead** — the dashboard shows what's due in the next 7 / 30 / 90 days and to whom.
+3. **Pay & record** — log a payment when you pay: one at a time, or bulk-imported from a bank/card CSV.
+4. **Reconcile** — recording against a schedule moves it forward automatically (advances a recurring bill's next due date, or closes a one-time).
+5. **Review** — categorize, attach proof, and clear anything on the attention list (late / under / over).
+
+### One-time vs. scheduled — and how import helps
+
+- **Scheduled payments** (rent, loans, subscriptions, auto-withdrawals) live as recurring schedules. Each payment you record advances the schedule to its next due date, so the forecast stays current without manual upkeep.
+- **One-time payments** are tracked two ways: a one-time *schedule* for something you're planning, or a standalone *payment record* for a charge that already happened and isn't tied to any schedule.
+- **Importing transactions** does both jobs at once. Point it at a credit-card or bank CSV and it will **capture miscellaneous card spend** as one-time records (categorize them on the History tab, §13), and **auto-match recurring subscriptions and auto-withdrawals to their schedules** by vendor name — recording the payment *and* reconciling the schedule in one step, so you're not hand-resolving each one.
+
+> 📝 **Note:** Matching is vendor-name based and ends with a quick **Review** step, so you confirm the high / medium / low-confidence matches before they're saved — auto-matched, not hand-resolved. See [§14](#14-importing-transactions-from-csv) for the full walkthrough.
+
+> 💡 **It's a ledger, not a payment processor.** PaySchedManager never moves money — it tracks what you owe and the proof that you paid it.
+
 ---
 
 ## 2. Key concepts & glossary
