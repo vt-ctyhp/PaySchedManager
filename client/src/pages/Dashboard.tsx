@@ -370,6 +370,10 @@ export default function Dashboard() {
       const schedule = record.paymentScheduleId
         ? schedules.find(s => s.id === record.paymentScheduleId)
         : schedules.find(s => s.expenseId === record.expenseId);
+      const effectiveExpenseTypeId = record.expenseTypeId ?? schedule?.expenseTypeId ?? null;
+      const categoryName = effectiveExpenseTypeId
+        ? getExpenseTypeById(effectiveExpenseTypeId)?.name ?? null
+        : null;
       const company = record.internalCompanyId
         ? getCompanyById(record.internalCompanyId)
         : schedule
@@ -417,10 +421,11 @@ export default function Dashboard() {
         scheduledDueDate,
         paymentMethod: record.paymentMethod,
         paymentAccountId: record.paymentAccountId ?? null,
+        category: categoryName,
         rawRecord: record,
       };
     });
-  }, [records, schedules, users, getAccountById, getCompanyById]);
+  }, [records, schedules, users, getAccountById, getCompanyById, getExpenseTypeById]);
 
   // ---- Dashboard analytics ----
   const runRate = useMemo(() => monthlyRunRate(schedules), [schedules]);
@@ -1283,6 +1288,7 @@ export default function Dashboard() {
             <PaymentHistoryTable
               payments={enrichedRecords}
               paymentAccounts={paymentAccounts}
+              expenseTypes={expenseTypes}
               approvers={users}
             />
           </TabsContent>
